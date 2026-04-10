@@ -6,6 +6,21 @@ Persona changes that. It watches how you interact with an AI and builds a person
 
 No API keys needed. No cloud services. Two runtime dependencies and some JSON on disk. The personality itself lives in three markdown files you can open in any text editor.
 
+## Table of Contents
+
+- [How It Works](#how-it-works)
+- [Brain Systems (v2)](#brain-systems-v2)
+- [Compatibility](#compatibility)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Tools](#tools)
+- [Slash Commands](#slash-commands)
+- [Architecture](#architecture)
+- [Security](#security)
+- [Use Cases](#use-cases)
+- [Pairs Well With: Engram](#pairs-well-with-engram)
+- [License](#license)
+
 ## How It Works
 
 ### Soul Files
