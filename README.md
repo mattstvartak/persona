@@ -317,6 +317,20 @@ These work in any MCP-compatible client (Claude Code, Cursor, etc.). The MCP ser
 | `/persona-reset [preset]` | Reset to defaults or load a preset: pair-programmer, mentor, analyst, creative, minimal. Signals and profile are preserved. |
 | `/persona-tune <instruction>` | Quick personality tweak via natural language. "be more direct", "less verbose", "stop summarizing". Records signals and applies immediately. |
 
+### Installing Slash Commands for Claude Code
+
+The slash commands above are advertised in Persona's MCP server instructions and work automatically in most clients. For Claude Code specifically, you can also install them as custom commands so they show up in the `/` command menu:
+
+```bash
+# From the persona directory
+bash install-commands.sh
+
+# To overwrite existing commands
+bash install-commands.sh --force
+```
+
+This copies command files to `~/.claude/commands/` where Claude Code picks them up globally. After installing, type `/` in Claude Code to see them in the command list.
+
 ## Architecture
 
 ```
