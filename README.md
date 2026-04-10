@@ -181,6 +181,7 @@ Persona is an MCP server. It works with anything that supports the Model Context
 ```
 /plugin marketplace add mattstvartak/onenomad-plugins
 /plugin install persona@onenomad-plugins
+/reload-plugins
 ```
 
 ### Claude Code (direct)
