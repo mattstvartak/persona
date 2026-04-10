@@ -1,0 +1,236 @@
+// ── Soul Files ───────────────────────────────────────────────────────
+
+export interface SoulFiles {
+  personality: string;
+  style: string;
+  skill: string;
+}
+
+export const SOUL_FILE_NAMES: (keyof SoulFiles)[] = ['personality', 'style', 'skill'];
+
+// ── Behavioral Signals ──────────────────────────────────────────────
+
+export type SignalType =
+  | 'correction'       // User corrected a response
+  | 'approval'         // User approved / accepted / thanked
+  | 'frustration'      // User expressed frustration
+  | 'elaboration'      // User asked for more detail
+  | 'simplification'   // User asked to simplify
+  | 'code_accepted'    // User used generated code
+  | 'code_rejected'    // User rejected generated code
+  | 'regen_request'    // Asked to regenerate / try again
+  | 'explicit_feedback' // Direct feedback about behavior
+  | 'style_correction' // User corrected tone / format / style
+  | 'praise'           // User praised a specific approach
+  | 'abandonment';     // User abruptly changed topic
+
+export interface BehavioralSignal {
+  id: string;
+  type: SignalType;
+  content: string;      // What triggered the signal
+  context?: string;     // Optional surrounding context
+  category?: string;    // Topic category (code, writing, research, etc.)
+  timestamp: string;
+}
+
+// ── Behavioral Profile ──────────────────────────────────────────────
+
+export interface StylePreferences {
+  verbosity: number;            // -1 (terse) to 1 (verbose)
+  opinionStrength: number;      // -1 (neutral) to 1 (opinionated)
+  codeToExplanation: number;    // 0 (all explanation) to 1 (all code)
+  prefersCodeFirst: boolean;
+  prefersBulletPoints: boolean;
+  prefersDirectAnswers: boolean;
+  deepDiveTopics: string[];     // Topics where user wants MORE detail
+  quickAnswerTopics: string[];  // Topics where user wants LESS detail
+  avoidPatterns: string[];      // Things user dislikes ("don't summarize", "no emojis")
+  preferredPatterns: string[];  // Things user likes ("show code first", "be direct")
+}
+
+export interface BehavioralProfile {
+  stats: {
+    totalSignals: number;
+    correctionRate: number;     // 0-1
+    approvalRate: number;       // 0-1
+    frustrationRate: number;    // 0-1
+    avgSatisfaction: number;    // 0-1
+  };
+  stylePreferences: StylePreferences;
+  topicPreferences: Record<string, {
+    verbosity: number;
+    satisfaction: number;
+    signalCount: number;
+  }>;
+  recentFeedback: string[];     // Last 10 explicit feedback items
+  lastUpdated: string;
+}
+
+export const DEFAULT_STYLE_PREFERENCES: StylePreferences = {
+  verbosity: 0,
+  opinionStrength: 0,
+  codeToExplanation: 0.5,
+  prefersCodeFirst: false,
+  prefersBulletPoints: false,
+  prefersDirectAnswers: true,
+  deepDiveTopics: [],
+  quickAnswerTopics: [],
+  avoidPatterns: [],
+  preferredPatterns: [],
+};
+
+export const DEFAULT_PROFILE: BehavioralProfile = {
+  stats: {
+    totalSignals: 0,
+    correctionRate: 0,
+    approvalRate: 0,
+    frustrationRate: 0,
+    avgSatisfaction: 0.5,
+  },
+  stylePreferences: { ...DEFAULT_STYLE_PREFERENCES },
+  topicPreferences: {},
+  recentFeedback: [],
+  lastUpdated: new Date().toISOString(),
+};
+
+// ── Evolution Proposals ─────────────────────────────────────────────
+
+export type ProposalType = 'personality_edit' | 'style_edit' | 'skill_edit' | 'new_pattern';
+
+export interface EvolutionProposal {
+  id: string;
+  type: ProposalType;
+  target: keyof SoulFiles;
+  action: 'add' | 'remove' | 'replace';
+  content: string;           // What to add/change
+  oldContent?: string;       // What to replace (for replace action)
+  rationale: string;         // Why, backed by evidence
+  evidence: Array<{
+    signalType: SignalType;
+    count: number;
+  }>;
+  confidence: number;        // 0-1
+  status: 'pending' | 'applied' | 'rejected';
+  createdAt: string;
+}
+
+// ── Emotional Tone (Plutchik-based) ────────────────────────────────
+
+export interface EmotionalTone {
+  joy: number;           // 0-1
+  trust: number;
+  fear: number;
+  surprise: number;
+  sadness: number;
+  disgust: number;
+  anger: number;
+  anticipation: number;
+}
+
+export const NEUTRAL_TONE: EmotionalTone = {
+  joy: 0, trust: 0, fear: 0, surprise: 0,
+  sadness: 0, disgust: 0, anger: 0, anticipation: 0,
+};
+
+// ── Big Five / OCEAN Traits ────────────────────────────────────────
+
+export interface BigFiveTraits {
+  openness: number;          // 0-1
+  conscientiousness: number;
+  extraversion: number;
+  agreeableness: number;
+  neuroticism: number;
+  sampleCount: number;       // interactions analyzed
+  reliable: boolean;         // true after 15+ samples
+}
+
+export const DEFAULT_BIG_FIVE: BigFiveTraits = {
+  openness: 0.5, conscientiousness: 0.5, extraversion: 0.5,
+  agreeableness: 0.5, neuroticism: 0.5,
+  sampleCount: 0, reliable: false,
+};
+
+// ── Style Mirroring Vector ─────────────────────────────────────────
+
+export interface StyleVector {
+  formality: number;     // 0 (casual) to 1 (formal)
+  energy: number;        // 0 (subdued) to 1 (high energy)
+  verbosity: number;     // 0 (terse) to 1 (verbose)
+  humor: number;         // 0 (serious) to 1 (playful)
+  specificity: number;   // 0 (abstract) to 1 (concrete)
+}
+
+export const DEFAULT_STYLE_VECTOR: StyleVector = {
+  formality: 0.5, energy: 0.5, verbosity: 0.5, humor: 0, specificity: 0.5,
+};
+
+// ── Cognitive Load ─────────────────────────────────────────────────
+
+export interface CognitiveLoadState {
+  load: number;          // 0 (flow) to 1 (overloaded)
+  inFlow: boolean;
+  overloaded: boolean;
+  messageLengthTrend: number[];  // rolling window
+  questionRepeatCount: number;
+}
+
+export const DEFAULT_COGNITIVE_LOAD: CognitiveLoadState = {
+  load: 0.3, inFlow: false, overloaded: false,
+  messageLengthTrend: [], questionRepeatCount: 0,
+};
+
+// ── Two-Timescale State ────────────────────────────────────────────
+
+export interface SessionState {
+  emotionalTone: EmotionalTone;
+  styleVector: StyleVector;
+  cognitiveLoad: CognitiveLoadState;
+  messageCount: number;
+  startedAt: string;
+}
+
+export interface TraitState {
+  bigFive: BigFiveTraits;
+  baselineStyleVector: StyleVector;
+  emotionalAssociations: EmotionalAssociation[];
+  sessionsAnalyzed: number;
+  lastConsolidation: string;
+}
+
+export interface EmotionalAssociation {
+  topic: string;
+  valence: number;       // -1 (negative) to 1 (positive)
+  arousal: number;       // 0 to 1
+  exposureCount: number;
+  lastSeen: string;
+}
+
+export const DEFAULT_SESSION_STATE: SessionState = {
+  emotionalTone: { ...NEUTRAL_TONE },
+  styleVector: { ...DEFAULT_STYLE_VECTOR },
+  cognitiveLoad: { ...DEFAULT_COGNITIVE_LOAD },
+  messageCount: 0,
+  startedAt: new Date().toISOString(),
+};
+
+export const DEFAULT_TRAIT_STATE: TraitState = {
+  bigFive: { ...DEFAULT_BIG_FIVE },
+  baselineStyleVector: { ...DEFAULT_STYLE_VECTOR },
+  emotionalAssociations: [],
+  sessionsAnalyzed: 0,
+  lastConsolidation: new Date().toISOString(),
+};
+
+// ── Config ──────────────────────────────────────────────────────────
+
+export interface PersonaConfig {
+  dataDir: string;
+  maxSignals: number;
+  proposalThreshold: number;  // Signals before generating proposals
+}
+
+export const DEFAULT_CONFIG: PersonaConfig = {
+  dataDir: '',
+  maxSignals: 500,
+  proposalThreshold: 20,
+};

@@ -1,0 +1,355 @@
+# Persona
+
+Every AI you talk to starts with the same personality. Same "I'd be happy to help!" opener. Same trailing summaries. It doesn't learn that you want code before explanation, or that you're a senior dev who already gets the basics. You correct it, it apologizes, and then next conversation it does the same thing all over again.
+
+Persona changes that. It watches how you interact with an AI and builds a personality from what actually happens. Corrections, approvals, frustration, praise. All of it gets recorded as signals that feed into a behavioral profile. That profile shapes how the agent talks to you going forward. After enough data, the system proposes changes to the agent's personality files that you can review and apply (or toss). The personality grows out of the relationship instead of being hardcoded in a prompt.
+
+No API keys needed. No cloud services. Two runtime dependencies and some JSON on disk. The personality itself lives in three markdown files you can open in any text editor.
+
+## How It Works
+
+### Soul Files
+
+The personality is stored in three files at `~/.claude/persona/soul/`. I call them "soul files."
+
+**PERSONALITY.md** covers who the agent is. Tone, humor, confidence, directness. There's a small set of core principles baked in that can't be overwritten (honesty, real engagement on hard topics, harm prevention), and everything else gets written by the system over time as it learns what clicks with you.
+
+**STYLE.md** covers how it communicates. Formatting, verbosity, emoji, things to avoid, things to keep doing. If you tell the agent "stop summarizing at the end" enough times, that ends up here.
+
+**SKILL.md** covers how it works. When to ask permission vs. when to just go. Which topics deserve deep dives, which ones get quick answers. This one builds from what you accept, reject, and correct.
+
+They all start mostly empty. A couple of baseline rules like "don't say Great question!" and "read before writing." The rest fills in from real interactions.
+
+### Signals
+
+Signals are the raw input. The agent records one whenever it picks up a meaningful reaction from you. Each has a type, the triggering content, and optional context about what was happening.
+
+12 types in total:
+
+| Signal | When it fires |
+|--------|--------------|
+| `correction` | You correct something |
+| `approval` | You accept, agree, or say thanks |
+| `frustration` | You're frustrated |
+| `elaboration` | You want more detail |
+| `simplification` | You want less |
+| `code_accepted` | You used the code |
+| `code_rejected` | You didn't |
+| `regen_request` | You asked to try again |
+| `explicit_feedback` | Direct feedback about behavior |
+| `style_correction` | You corrected tone or format |
+| `praise` | You liked something specific |
+| `abandonment` | You changed topic abruptly (usually means something went wrong) |
+
+Signals live in a FIFO buffer, 500 max by default. Oldest drop off as new ones arrive. The profile rebuilds after every signal, so it's always reflecting the current state.
+
+### The Profile
+
+Signals are granular. The profile is the big picture, rebuilt from the last 30 days of data.
+
+**Satisfaction** is a score from 0 to 1. It's based on the ratio of positive signals (approval, praise, code accepted) to negative ones (corrections, frustration, rejections, abandonment). Starts at 0.5 and moves from there.
+
+**Style preferences** track things like verbosity on a -1 to +1 scale. Elaboration requests nudge it up, simplification pushes it down. The system also tracks code-first preference, bullet points, direct answers, and opinion strength. There are two running lists too: things you've told it to stop doing, and things you've praised.
+
+**Per-topic tuning** is where it gets more specific. If you keep asking for extra detail on architecture but want quick answers about git commands, those get tracked separately. Any topic with 3+ signals and a clear lean gets flagged for special handling.
+
+The last 10 explicit feedback items you gave also get stored and surfaced directly so the agent doesn't forget what you told it.
+
+### Adaptations
+
+Soul files change slowly through proposals. Adaptations are different. They recalculate on every request by reading the current profile.
+
+If frustration is above 15%, the agent gets a heads-up to be extra careful. Correction rate above 20%? Told to double-check before responding. Been asking for elaboration on a specific topic? It goes deeper there. Got avoid patterns stacked up? Those show up as explicit directives.
+
+No approval needed. These kick in automatically as the profile shifts.
+
+### Synthesis
+
+This is probably the most interesting part. Instead of just counting signal types, synthesis looks at how you actually write and extracts communication traits from your messages.
+
+It picks up on message length, sentence length, formality (are you saying "please" and "would you" or dropping slang and swearing?), technical vocabulary, humor, directness (commands vs. polite requests), and question style (exploratory vs. straight to the point).
+
+Those traits become actual personality content. Short messages, high directness, lots of technical terms, no emoji? The system writes something like "Be direct. Skip basic explanations. This is an experienced developer." More exploratory messages with casual language and humor? It adapts to match that energy instead.
+
+It won't write anything until there's enough data though. 5 messages minimum for personality traits, 3 for style. No conclusions from small samples.
+
+### Evolution Proposals
+
+Every 20 signals (configurable), the engine looks at patterns and generates proposals. These are concrete edits to soul files, each with a target file, an action (add/remove/replace), the content, a rationale, a confidence score, and the signal evidence that triggered it.
+
+Nothing auto-applies. Proposals sit in a queue until you (or the agent) explicitly applies or rejects them. You stay in control of how the personality evolves.
+
+Some of the patterns it picks up:
+
+- 3+ elaboration requests with rising verbosity? Proposes a "more detail" guideline for STYLE.md
+- Multiple frustration signals with overlapping words? Proposes a caution note in SKILL.md
+- Style corrections? Those go into a proposal at 0.8 confidence
+- Code getting rejected more than accepted? Proposes a "read the codebase first" rule
+- Praised something specific multiple times? "Keep doing X" goes into PERSONALITY.md
+- Accumulated avoid patterns? Those hit STYLE.md at 0.9 confidence (highest tier)
+
+Duplicates get checked so the same proposal doesn't pile up.
+
+## Brain Systems (v2)
+
+Version 2 adds a set of systems modeled after how the human brain actually processes social interaction. These run automatically alongside the signal/profile system.
+
+### Emotional Tone Detection
+
+Based on [Plutchik's wheel of emotions](https://en.wikipedia.org/wiki/Plutchik%27s_wheel_of_emotions). Every message gets scored across 8 primary emotions (joy, trust, fear, surprise, sadness, disgust, anger, anticipation) as a float vector. Compound emotions emerge naturally from the vector: contempt is anger + disgust, awe is surprise + fear, and so on.
+
+The system also detects "text micro-expressions," a concept adapted from Paul Ekman's work on facial micro-expressions. In text, these show up as punctuation shifts (periods after exclamation marks = mood drop), message length drops (sudden 80% shorter = something shut the user down), ALL CAPS clustering, and hedge accumulation ("maybe", "sort of", "I think" clustering = low confidence).
+
+Emotional associations form asymmetrically, modeled after how the amygdala encodes memory. Negative associations form fast (learning rate 0.8, can form in 1-2 exposures). Positive associations form slowly (learning rate 0.2, need 5-10 exposures). This means the system is appropriately cautious about topics that caused frustration even once, but needs repeated positive signals before assuming an approach works.
+
+### Big Five Personality Traits
+
+Infers the user's personality along the [Big Five / OCEAN dimensions](https://en.wikipedia.org/wiki/Big_Five_personality_traits) from text signals. Openness tracks vocabulary diversity and hypothetical engagement. Conscientiousness looks at message structure and specificity. Extraversion measures social references and energy markers. Agreeableness detects hedging vs bluntness. Neuroticism picks up negative emotion language and reassurance-seeking.
+
+Uses exponential moving average with 0.95 decay per interaction so the scores represent stable traits, not momentary states. Won't act on the results until 15+ interactions have been analyzed (that's the threshold where psychometric reliability stabilizes). Once reliable, the Big Five scores inform adaptations: high openness users get creative alternatives, high conscientiousness users get structured responses, low agreeableness users get matched directness.
+
+### Style Mirroring
+
+Based on the [chameleon effect](https://en.wikipedia.org/wiki/Chameleon_effect) (Chartrand & Bargh, 1999). Humans naturally mirror their conversation partner's communication style. The system computes a 5-dimensional style vector per message: formality, energy, verbosity, humor, and specificity.
+
+The target response style is calculated as `0.7 * user_style + 0.3 * baseline`. The 0.3 baseline is important. Full mirroring of extreme states is counterproductive (matching a panicked user's panic makes things worse). The baseline provides stability while still adapting to the user's register.
+
+### Cognitive Load Detection
+
+Detects when the user is in flow state vs cognitively overloaded, based on Csikszentmihalyi's flow research and cognitive load theory.
+
+Flow indicators: consistent message pacing, short confirmatory messages ("got it", "next?"), domain vocabulary, building on previous responses. When flow is detected, the system tells the agent to be concise, match pace, and never inject unsolicited explanations.
+
+Overload indicators: rephrased questions (asking the same thing differently = didn't understand), lexical simplification (switching from technical terms to simple words), "wait" or "hold on" or "let me think." When overloaded, the system recommends breaking information into smaller chunks with numbered steps.
+
+Response verbosity gets gated inversely to cognitive load. High load = shorter responses.
+
+### Between-Session Consolidation
+
+Modeled after how the brain consolidates memories during sleep. The hippocampus replays experiences to the neocortex in compressed form. The Default Mode Network integrates experiences into a coherent self-model during idle periods.
+
+The consolidation pass runs between sessions and does several things:
+
+- Decays stale emotional associations (topics that haven't come up in a while fade in emotional weight)
+- Detects style drift across sessions (if recent sessions show different patterns than older ones, the baseline adjusts)
+- Checks for contradictions (both approval and correction rates high = inconsistent signals, or the agent is inconsistent)
+- Checks for sycophancy (approval rate above 80% with 30+ signals = the agent might be optimizing for agreement)
+- Records session summaries for longitudinal pattern analysis
+
+Uses a two-timescale update rule from neuroscience research. Session-level state has a fast learning rate (0.3) and resets between sessions, capturing temporary mood and context. Trait-level state has a slow learning rate (0.01) that only updates when session observations consistently diverge from established traits. This prevents the system from overreacting to a bad day while still capturing genuine personality evolution over time.
+
+### Sycophancy Resistance
+
+The biggest failure mode of adaptive AI personality systems is sycophancy: optimizing for user approval until the agent becomes a yes-man. Replika demonstrated this problem at scale. Persona addresses it through several mechanisms.
+
+The immutable core principles in PERSONALITY.md (honesty over agreeability, genuine engagement) can't be overwritten by the evolution system. The consolidation pass monitors approval rate and flags if it exceeds 85%. The adaptations layer includes a self-check directive when approval is suspiciously high. And the system treats "user was challenged and came back" as a positive signal, not just "user agreed."
+
+The inner layer (soul files, core principles) constrains the outer layer (adaptive communication style). Style adapts freely. Values don't.
+
+## Compatibility
+
+Persona is an MCP server. It works with anything that supports the Model Context Protocol over stdio.
+
+- **Claude Code** (CLI and desktop app)
+- **Claude.ai** (via MCP config)
+- **Cursor**
+- **Windsurf**
+- **Cline** (VS Code)
+- **Continue** (VS Code / JetBrains)
+- **OpenClaw**
+- Any other MCP-compatible client
+
+## Installation
+
+### As an MCP Server
+
+Add to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "persona": {
+      "command": "node",
+      "args": ["/path/to/persona/dist/server.js"]
+    }
+  }
+}
+```
+
+### From Source
+
+```bash
+git clone https://github.com/mattstvartak/persona.git
+cd persona
+npm install
+npm run build
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PERSONA_DATA_DIR` | `~/.claude/persona` | Where data gets stored |
+
+### Internal Defaults
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `maxSignals` | `500` | Signal buffer size (FIFO) |
+| `proposalThreshold` | `20` | Signals between auto-generating proposals |
+
+## Tools
+
+15 tools across six groups.
+
+### Context & Adaptations
+
+| Tool | What it does |
+|------|-------------|
+| `persona_context` | Full personality dump: soul files plus learned adaptations. Good to call at the start of complex interactions. |
+| `persona_adapt` | Just the adaptations, without the soul file content. |
+
+### Signal Recording
+
+| Tool | What it does |
+|------|-------------|
+| `persona_signal` | Record a behavioral signal. This drives everything else in the system. |
+
+### Profile & Stats
+
+| Tool | What it does |
+|------|-------------|
+| `persona_profile` | The behavioral profile: preferences, satisfaction, topic patterns. |
+| `persona_stats` | High-level overview with signal counts, profile state, pending proposals, and soul file sizes. |
+
+### Evolution
+
+| Tool | What it does |
+|------|-------------|
+| `persona_proposals` | List proposals with evidence and rationale. |
+| `persona_apply` | Apply a pending proposal. |
+| `persona_reject` | Reject one. |
+| `persona_evolve` | Force proposal generation without waiting for the signal threshold. |
+
+### Soul Files
+
+| Tool | What it does |
+|------|-------------|
+| `persona_read` | Read a soul file. |
+| `persona_edit` | Overwrite a soul file directly. Full manual control. |
+| `persona_init` | Initialize defaults. Won't overwrite existing files. |
+
+### Synthesis
+
+| Tool | What it does |
+|------|-------------|
+| `persona_synthesize` | Analyze messages and update soul files from detected traits. Also processes through all brain systems. |
+| `persona_analyze` | Full analysis (communication traits, Big Five, style vector, emotional tone) without changing anything. |
+
+### Consolidation
+
+| Tool | What it does |
+|------|-------------|
+| `persona_consolidate` | Run the between-session consolidation pass. Decays stale emotions, detects drift, checks for sycophancy. |
+
+## Architecture
+
+```
+                          ┌─────────────────────────────────┐
+User Messages ──────────> │ Brain Systems (per-message)      │
+                          │  Emotional Tone (Plutchik 8-dim) │
+                          │  Style Vector (5-dim mirroring)  │
+                          │  Cognitive Load (flow/overload)  │
+                          │  Big Five Traits (OCEAN, slow)   │
+                          └──────────┬──────────────────────┘
+                                     |
+                          Session State (fast, resets)
+                                     |
+User Reactions --> Signals --> Profile --> Adaptations
+                     |                       |
+                     |              (injected every request)
+                     |
+              Evolution Engine ─── Proposals (pending)
+                     |                    |
+              Between Sessions    Apply/Reject
+                     |                    |
+              Consolidation        Soul Files
+                     |                    |
+              Trait State (slow)    Agent Context
+              Emotional Associations
+              Style Baseline
+```
+
+### Data Storage
+
+All local:
+
+```
+~/.claude/persona/
+├── signals.json          # Signal buffer (FIFO, max 500)
+├── profile.json          # Behavioral profile
+├── proposals.json        # Evolution proposals
+├── trait-state.json      # Big Five, style baseline, emotional associations
+├── session-history.json  # Session summaries for consolidation
+└── soul/
+    ├── PERSONALITY.md    # Tone, humor, directness
+    ├── STYLE.md          # Formatting, verbosity
+    └── SKILL.md          # Workflow, pacing
+```
+
+### Dependencies
+
+- **@modelcontextprotocol/sdk** for the MCP protocol
+- **zod** for schema validation
+
+That's it. No vector databases, no embedding models, no API keys, no cloud services. Personality tracking doesn't need heavy infrastructure. It needs good heuristics and clean data flow.
+
+## Security
+
+### Network
+
+Zero network calls. No telemetry, no analytics, no model downloads, no sync. Nothing leaves your machine.
+
+### Storage
+
+Everything sits at `~/.claude/persona/`. Soul files are plain markdown. Signals and proposals are JSON. You can read, edit, or delete any of it whenever you want.
+
+## Use Cases
+
+**Personal AI assistant.** You talk to an AI every day and it starts with the same generic personality every time. Persona builds a communication style that fits how you actually work. After a few weeks the agent starts to feel like it knows how to talk to you specifically, not just "a user."
+
+**Developer tools.** If you spend your day in Claude Code or Cursor, Persona handles the communication style while Engram (if you run it) handles the facts. "Show code first" and "stop summarizing" are Persona's domain. "Always use explicit return types" and "we deploy to Vercel" are Engram's. Different tools for different problems.
+
+**Shareable presets.** Soul files are just three markdown files. Copy them and you've got a portable personality. A "Business Analyst" preset could lean formal, thorough, and structured. A "Pair Programmer" preset could be terse, code-first, and opinionated. Swap the files, the agent's whole style changes. I'd love to build a marketplace for these down the road. Downloadable souls for different workflows.
+
+**Coaching and therapy bots.** An agent that matches its communication style to each person it works with. More formal with some, more casual with others, more patient when frustration spikes. The core principles around honesty and harm prevention are immutable and survive all personality evolution.
+
+## Pairs Well With: Engram
+
+If Persona is the personality, [Engram](https://github.com/mattstvartak/engram) is the brain.
+
+Persona handles *how* the agent talks to you. Engram handles *what* it remembers. They solve different problems and work best together.
+
+Engram learns that you prefer TypeScript over Python. Persona learns that you want short answers with code first. Engram stores the fact that you got laid off last month. Persona picks up on the emotional context around that and knows to be thoughtful about how it comes up.
+
+When both MCP servers are running, Engram's system prompt tells the agent to call `persona_signal` when it notices corrections, approvals, or style preferences. The agent calls `persona_context` at the start of complex interactions to calibrate. No extra config needed. They find each other through MCP.
+
+Persona works fine solo. But if you want an agent that feels like it genuinely knows you, not just how to talk to you but what you've told it, run both.
+
+## License
+
+Licensed under the [Business Source License 1.1](LICENSE).
+
+- **Licensor:** Matt Stvartak / OneNomad LLC
+- **Licensed Work:** Persona MCP, Copyright (c) 2026 Matt Stvartak / OneNomad LLC
+- **Additional Use Grant:** You may use the Licensed Work for personal, educational, and non-commercial purposes. Production use in a commercial product or service requires a separate commercial license.
+- **Change Date:** April 10, 2030
+- **Change License:** Apache License, Version 2.0
+
+Use it, fork it, learn from it, run it for yourself. You can't sell it, bundle it with paid software, host it as a service for profit, or rebrand it. On the change date it converts to Apache 2.0 and those restrictions go away.
+
+Want to use it commercially before then? Reach out. I'm not trying to lock things down, I just want to know where it ends up.
+
+For licensing inquiries: **matt@onenomad.dev**
