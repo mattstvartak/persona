@@ -11,7 +11,7 @@ No API keys needed. No cloud services. Two runtime dependencies and some JSON on
 - [How It Works](#how-it-works)
 - [Brain Systems (v2)](#brain-systems-v2)
 - [Compatibility](#compatibility)
-- [Installation](#installation)
+- [Installation](#installation) (Claude Code, Claude Desktop, Cursor/Windsurf/Cline, Source)
 - [Configuration](#configuration)
 - [Tools](#tools)
 - [Slash Commands](#slash-commands)
@@ -176,16 +176,46 @@ Persona is an MCP server. It works with anything that supports the Model Context
 
 ## Installation
 
-### As an MCP Server
+### Claude Code (plugin marketplace)
 
-Add to your MCP client config:
+```
+/plugin marketplace add mattstvartak/onenomad-plugins
+/plugin install persona@onenomad-plugins
+```
+
+### Claude Code (direct)
+
+```bash
+claude mcp add persona -- npx @onenomad/persona-mcp
+```
+
+### Claude Desktop
+
+Add to your Claude Desktop config file. On macOS it's at `~/Library/Application Support/Claude/claude_desktop_config.json`, on Windows at `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "persona": {
-      "command": "node",
-      "args": ["/path/to/persona/dist/server.js"]
+      "command": "npx",
+      "args": ["@onenomad/persona-mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving.
+
+### Any MCP Client (Cursor, Windsurf, Cline, etc.)
+
+Add to your client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "persona": {
+      "command": "npx",
+      "args": ["@onenomad/persona-mcp"]
     }
   }
 }
@@ -198,6 +228,19 @@ git clone https://github.com/mattstvartak/persona.git
 cd persona
 npm install
 npm run build
+```
+
+Then point your MCP client at `dist/server.js`:
+
+```json
+{
+  "mcpServers": {
+    "persona": {
+      "command": "node",
+      "args": ["/path/to/persona/dist/server.js"]
+    }
+  }
+}
 ```
 
 ## Configuration
