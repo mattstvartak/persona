@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "persona": {
+      "command": "node",
+      "args": ["{pluginDir}/dist/server.js"]
+    }
+  }
+}
