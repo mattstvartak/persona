@@ -2,7 +2,7 @@
 name: persona-profile
 description: "View the behavioral profile and signal statistics. Use when the user says /persona-profile, wants to know what the system has learned about them, or asks 'what do you think of me' or 'how am I doing'."
 user-invocable: true
-metadata: {"openclaw":{"emoji":"📊"}}
+metadata: {"version":"1.0.0-beta.2"}
 ---
 
 # Persona Profile

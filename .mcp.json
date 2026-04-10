@@ -2,7 +2,10 @@
   "mcpServers": {
     "persona": {
       "command": "node",
-      "args": ["{pluginDir}/dist/server.js"]
+      "args": ["{pluginDir}/dist/server.js"],
+      "env": {
+        "PERSONA_SERVER": "true"
+      }
     }
   }
 }

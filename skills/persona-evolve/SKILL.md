@@ -2,7 +2,7 @@
 name: persona-evolve
 description: "Review, apply, or reject personality evolution proposals. Use when the user says /persona-evolve, wants to see pending personality changes, or asks about how the agent's personality is evolving."
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🧬"}}
+metadata: {"version":"1.0.0-beta.2"}
 ---
 
 # Persona Evolve

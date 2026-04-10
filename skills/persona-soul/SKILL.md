@@ -2,7 +2,7 @@
 name: persona-soul
 description: "View or edit the agent's soul files (personality, style, skill). Use when the user says /persona-soul, wants to see the current personality, or wants to directly edit how the agent behaves."
 user-invocable: true
-metadata: {"openclaw":{"emoji":"👻"}}
+metadata: {"version":"1.0.0-beta.2"}
 ---
 
 # Persona Soul

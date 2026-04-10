@@ -2,7 +2,7 @@
 name: persona-reset
 description: "Reset the agent's personality to defaults or load a soul preset. Use when the user says /persona-reset, wants a fresh start, or wants to load a different personality preset."
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🔄"}}
+metadata: {"version":"1.0.0-beta.2"}
 ---
 
 # Persona Reset

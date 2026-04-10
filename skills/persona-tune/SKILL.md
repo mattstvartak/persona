@@ -2,7 +2,7 @@
 name: persona-tune
 description: "Fine-tune specific personality traits without editing soul files directly. Use when the user says /persona-tune, or gives quick feedback like 'be more direct', 'less verbose', 'more opinionated', 'tone it down'."
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🎛️"}}
+metadata: {"version":"1.0.0-beta.2"}
 ---
 
 # Persona Tune

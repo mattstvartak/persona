@@ -2,7 +2,7 @@
 name: persona-analyze
 description: "Analyze the user's communication style from recent messages. Use when the user says /persona-analyze, wants to know how they come across, or asks the agent to learn their style."
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🔬"}}
+metadata: {"version":"1.0.0-beta.2"}
 ---
 
 # Persona Analyze

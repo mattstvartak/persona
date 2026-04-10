@@ -171,20 +171,11 @@ Persona is an MCP server. It works with anything that supports the Model Context
 - **Windsurf**
 - **Cline** (VS Code)
 - **Continue** (VS Code / JetBrains)
-- **OpenClaw**
 - Any other MCP-compatible client
 
 ## Installation
 
-### Claude Code (plugin marketplace)
-
-```
-/plugin marketplace add mattstvartak/onenomad-plugins
-/plugin install persona@onenomad-plugins
-/reload-plugins
-```
-
-### Claude Code (direct)
+### Claude Code
 
 ```bash
 claude mcp add persona -- npx @onenomad/persona-mcp
@@ -315,7 +306,7 @@ Then point your MCP client at `dist/server.js`:
 
 ## Slash Commands
 
-These work in any MCP-compatible client (Claude Code, Cursor, OpenClaw, etc.). The MCP server advertises them in its instructions so the agent knows how to handle them. SKILL.md files are also included for platforms that discover skills from the filesystem.
+These work in any MCP-compatible client (Claude Code, Cursor, etc.). The MCP server advertises them in its instructions so the agent knows how to handle them. SKILL.md files are also included for platforms that discover skills from the filesystem.
 
 | Command | What it does |
 |---------|-------------|
