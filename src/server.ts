@@ -109,6 +109,16 @@ const server = new McpServer(
       '',
       '## Integration with Smart Memory',
       'If smart-memory is available: memory handles WHAT (facts, knowledge), persona handles HOW (tone, style).',
+      '',
+      '## Slash Commands (user-invocable)',
+      'These commands work as /command in any compatible client. When the user types one, follow the instructions below.',
+      '',
+      '/persona-evolve [generate|history] -- Review pending evolution proposals interactively. Default: walk through each proposal, ask apply/reject/skip. "generate" forces new proposals. "history" shows all past proposals.',
+      '/persona-soul [personality|style|skill] [edit] -- View or edit soul files. No args shows all three. With file name shows that one. With "edit" enters edit mode.',
+      '/persona-profile [detailed] -- Show what the system has learned: satisfaction, style prefs, Big Five traits, topic patterns. "detailed" shows full signal counts and proposal history.',
+      '/persona-analyze [sync] -- Analyze communication style from recent messages. Default is read-only preview. "sync" updates soul files from detected traits.',
+      '/persona-reset [preset] -- Reset to defaults or load a preset. Presets: pair-programmer, mentor, analyst, creative, minimal. Signals and profile are preserved, only soul files change.',
+      '/persona-tune <instruction> -- Quick personality adjustment via natural language. "be more direct", "less verbose", "stop summarizing". Records appropriate signals and applies immediately.',
     ].join('\n'),
   }
 );
