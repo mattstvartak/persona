@@ -254,6 +254,19 @@ npm run build
 |------|-------------|
 | `persona_consolidate` | Run the between-session consolidation pass. Decays stale emotions, detects drift, checks for sycophancy. |
 
+## Slash Commands
+
+These work in any MCP-compatible client (Claude Code, Cursor, OpenClaw, etc.). The MCP server advertises them in its instructions so the agent knows how to handle them. SKILL.md files are also included for platforms that discover skills from the filesystem.
+
+| Command | What it does |
+|---------|-------------|
+| `/persona-evolve [generate\|history]` | Walk through pending evolution proposals. Apply, reject, or skip each one. "generate" forces new proposals from current signals. "history" shows all past proposals. |
+| `/persona-soul [file] [edit]` | View or edit soul files (personality, style, skill). No args shows all three. With "edit", enter interactive editing. |
+| `/persona-profile [detailed]` | See what the system has learned: satisfaction, style prefs, Big Five traits, emotional associations, topic patterns. "detailed" shows full signal counts. |
+| `/persona-analyze [sync]` | Analyze communication style from recent messages. Read-only by default. "sync" updates soul files from detected traits. |
+| `/persona-reset [preset]` | Reset to defaults or load a preset: pair-programmer, mentor, analyst, creative, minimal. Signals and profile are preserved. |
+| `/persona-tune <instruction>` | Quick personality tweak via natural language. "be more direct", "less verbose", "stop summarizing". Records signals and applies immediately. |
+
 ## Architecture
 
 ```
