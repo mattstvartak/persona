@@ -3,7 +3,7 @@ import type { EmotionalTone, EmotionalAssociation, PersonaConfig, TraitState } f
  * Detect emotional tone from a single message.
  * Returns an 8-dimensional vector with scores 0-1 per emotion.
  */
-export declare function detectEmotionalTone(message: string): EmotionalTone;
+export declare function detectEmotionalTone(message: string, recentMessages?: string[]): EmotionalTone;
 interface MicroSignals {
     energyDrop: boolean;
     shouting: boolean;
@@ -11,7 +11,20 @@ interface MicroSignals {
     lexicalRegression: boolean;
     pronounShift: boolean;
 }
-export declare function detectMicroExpressions(message: string): MicroSignals;
+export declare function detectMicroExpressions(message: string, recentMessages?: string[]): MicroSignals;
+/**
+ * Detect compound emotions (dyads) from the 8-dimensional tone vector.
+ * Primary dyads are adjacent emotions on Plutchik's wheel.
+ * Secondary dyads are two petals apart. Tertiary are three apart.
+ *
+ * Returns detected dyads with their intensity.
+ */
+export interface DetectedDyad {
+    name: string;
+    intensity: number;
+    components: [keyof EmotionalTone, keyof EmotionalTone];
+}
+export declare function detectDyads(tone: EmotionalTone): DetectedDyad[];
 /**
  * Collapse the 8-dim vector to a single valence score (-1 to 1).
  * Positive emotions push toward 1, negative toward -1.

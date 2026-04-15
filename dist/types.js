@@ -47,6 +47,7 @@ export const DEFAULT_SESSION_STATE = {
     cognitiveLoad: { ...DEFAULT_COGNITIVE_LOAD },
     messageCount: 0,
     startedAt: new Date().toISOString(),
+    recentMessages: [],
 };
 export const DEFAULT_TRAIT_STATE = {
     bigFive: { ...DEFAULT_BIG_FIVE },
@@ -58,6 +59,6 @@ export const DEFAULT_TRAIT_STATE = {
 export const DEFAULT_CONFIG = {
     dataDir: '',
     maxSignals: 500,
-    proposalThreshold: 20,
+    proposalThreshold: 12,
 };
 //# sourceMappingURL=types.js.map

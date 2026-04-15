@@ -9,7 +9,7 @@ import { loadProfile, rebuildProfile } from './profile.js';
 import { getAdaptations, getProfileSummary, setSessionState } from './adaptations.js';
 import { generateProposals, loadProposals, applyProposal, rejectProposal } from './evolution.js';
 import { analyzeUserMessages, updateSoulFromSynthesis } from './synthesis.js';
-import { detectEmotionalTone, emotionalValence, loadTraitState, saveTraitState, updateEmotionalAssociation } from './emotions.js';
+import { detectEmotionalTone, emotionalValence, detectDyads, loadTraitState, saveTraitState, updateEmotionalAssociation } from './emotions.js';
 import { updateBigFive, computeStyleVector, updateBaselineStyle } from './traits.js';
 import { updateCognitiveLoad } from './cognitive-load.js';
 import { runConsolidation, recordSessionSummary } from './consolidation.js';
@@ -25,8 +25,8 @@ function text(t) { return { content: [{ type: 'text', text: t }] }; }
 function json(data) { return text(JSON.stringify(data, null, 2)); }
 // ── Helper: process a user message through all brain systems ───────
 function processUserMessage(message) {
-    // Emotional tone detection (Plutchik)
-    const tone = detectEmotionalTone(message);
+    // Emotional tone detection (Plutchik) -- now with message history for micro-expressions
+    const tone = detectEmotionalTone(message, session.recentMessages);
     // Blend with existing session tone (EMA with 0.3 learning rate for session)
     for (const key of Object.keys(tone)) {
         session.emotionalTone[key] = session.emotionalTone[key] * 0.7 + tone[key] * 0.3;
@@ -44,6 +44,8 @@ function processUserMessage(message) {
     traitState.baselineStyleVector = updateBaselineStyle(traitState.baselineStyleVector, msgStyle);
     saveTraitState(config, traitState);
     session.messageCount++;
+    // Maintain rolling window of last 5 messages for micro-expression detection
+    session.recentMessages = [...session.recentMessages, message].slice(-5);
     lastUserMessage = message;
     setSessionState(session);
 }
@@ -237,6 +239,7 @@ server.registerTool('persona_stats', {
                 inFlow: session.cognitiveLoad.inFlow,
                 overloaded: session.cognitiveLoad.overloaded,
                 dominantEmotion: getDominantEmotion(),
+                compoundEmotions: detectDyads(session.emotionalTone).slice(0, 3).map(d => d.name),
             },
         },
         proposals: {
@@ -416,7 +419,7 @@ server.registerTool('persona_analyze', {
         specificity: avg(styleVectors.map(s => s.specificity)),
     };
     // Detect emotional tone from messages
-    const tones = parsed.map(detectEmotionalTone);
+    const tones = parsed.map(msg => detectEmotionalTone(msg));
     const avgTone = {};
     for (const key of Object.keys(tones[0] || {})) {
         avgTone[key] = avg(tones.map(t => t[key]));
@@ -469,6 +472,12 @@ function getBrainStateSummary() {
     if (dominant !== 'neutral') {
         lines.push(`Emotional context: ${dominant} (valence: ${valence > 0 ? '+' : ''}${valence.toFixed(2)})`);
     }
+    // Compound emotions (Plutchik dyads)
+    const dyads = detectDyads(session.emotionalTone);
+    if (dyads.length > 0) {
+        const dyadStr = dyads.slice(0, 3).map(d => `${d.name} (${d.intensity.toFixed(2)})`).join(', ');
+        lines.push(`Compound emotions: ${dyadStr}`);
+    }
     // Cognitive load
     if (session.cognitiveLoad.inFlow) {
         lines.push('Cognitive state: IN FLOW (be concise, match pace)');
@@ -496,6 +505,26 @@ function avg(nums) {
         return 0;
     return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
+// ── Auto-Consolidation ────────────────────────────────────────────
+const AUTO_CONSOLIDATION_HOURS = 24;
+function checkAutoConsolidate() {
+    try {
+        const traitState = loadTraitState(config);
+        const lastConsolidation = new Date(traitState.lastConsolidation).getTime();
+        const hoursSince = (Date.now() - lastConsolidation) / 3_600_000;
+        if (hoursSince >= AUTO_CONSOLIDATION_HOURS) {
+            console.error(`Auto-consolidation: ${hoursSince.toFixed(1)}h since last consolidation, running now...`);
+            const result = runConsolidation(config);
+            console.error(`Auto-consolidation complete: ${result.emotionalDecay} associations decayed, ${result.traitUpdates.length} trait updates`);
+            if (result.contradictions.length > 0) {
+                console.error(`Auto-consolidation warnings: ${result.contradictions.join('; ')}`);
+            }
+        }
+    }
+    catch (err) {
+        console.error('Auto-consolidation check failed:', err);
+    }
+}
 // ── Start Server ───────────────────────────────────────────────────
 async function main() {
     const transport = new StdioServerTransport();
@@ -513,6 +542,8 @@ async function main() {
     }
     console.error(`Emotional associations: ${traitState.emotionalAssociations.length}`);
     console.error(`Sessions analyzed: ${traitState.sessionsAnalyzed}`);
+    // Auto-consolidate if stale (> 24h since last consolidation)
+    checkAutoConsolidate();
 }
 main().catch(err => {
     console.error('Fatal error:', err);

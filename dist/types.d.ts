@@ -104,6 +104,7 @@ export interface SessionState {
     cognitiveLoad: CognitiveLoadState;
     messageCount: number;
     startedAt: string;
+    recentMessages: string[];
 }
 export interface TraitState {
     bigFive: BigFiveTraits;

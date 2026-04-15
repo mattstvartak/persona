@@ -187,6 +187,7 @@ export interface SessionState {
   cognitiveLoad: CognitiveLoadState;
   messageCount: number;
   startedAt: string;
+  recentMessages: string[];  // rolling window of last 5 messages for micro-expression detection
 }
 
 export interface TraitState {
@@ -211,6 +212,7 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   cognitiveLoad: { ...DEFAULT_COGNITIVE_LOAD },
   messageCount: 0,
   startedAt: new Date().toISOString(),
+  recentMessages: [],
 };
 
 export const DEFAULT_TRAIT_STATE: TraitState = {
@@ -232,5 +234,5 @@ export interface PersonaConfig {
 export const DEFAULT_CONFIG: PersonaConfig = {
   dataDir: '',
   maxSignals: 500,
-  proposalThreshold: 20,
+  proposalThreshold: 12,
 };

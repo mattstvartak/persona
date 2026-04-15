@@ -59,7 +59,7 @@ const EMOTION_LEXICON = {
  * Detect emotional tone from a single message.
  * Returns an 8-dimensional vector with scores 0-1 per emotion.
  */
-export function detectEmotionalTone(message) {
+export function detectEmotionalTone(message, recentMessages) {
     const tone = { ...NEUTRAL_TONE };
     const lower = message.toLowerCase();
     const wordCount = message.split(/\s+/).length || 1;
@@ -73,8 +73,8 @@ export function detectEmotionalTone(message) {
         // Normalize by message length, cap at 1
         tone[emotion] = Math.min(1, hits / Math.max(3, wordCount * 0.3));
     }
-    // Boost from micro-expression signals
-    const microSignals = detectMicroExpressions(message);
+    // Boost from micro-expression signals (now with message history)
+    const microSignals = detectMicroExpressions(message, recentMessages);
     if (microSignals.energyDrop) {
         tone.sadness = Math.min(1, tone.sadness + 0.2);
         tone.anger = Math.min(1, tone.anger + 0.1);
@@ -85,21 +85,114 @@ export function detectEmotionalTone(message) {
     if (microSignals.hedging) {
         tone.fear = Math.min(1, tone.fear + 0.15);
     }
+    if (microSignals.lexicalRegression) {
+        tone.sadness = Math.min(1, tone.sadness + 0.15);
+        tone.fear = Math.min(1, tone.fear + 0.1);
+    }
+    if (microSignals.pronounShift) {
+        tone.anger = Math.min(1, tone.anger + 0.15);
+        tone.disgust = Math.min(1, tone.disgust + 0.1);
+    }
     return tone;
 }
-export function detectMicroExpressions(message) {
+export function detectMicroExpressions(message, recentMessages) {
     const words = message.split(/\s+/);
+    const history = recentMessages ?? [];
     return {
-        energyDrop: false, // needs message history, handled in session tracking
+        energyDrop: detectEnergyDrop(message, history),
         shouting: (message.match(/\b[A-Z]{3,}\b/g) || []).length >= 2,
         hedging: countHedges(message) >= 3,
-        lexicalRegression: false, // needs message history
-        pronounShift: false, // needs message history
+        lexicalRegression: detectLexicalRegression(message, history),
+        pronounShift: detectPronounShift(message, history),
     };
+}
+/**
+ * Detect energy drop: current message is significantly shorter than recent average.
+ */
+function detectEnergyDrop(message, history) {
+    if (history.length < 2)
+        return false;
+    const recentLengths = history.slice(-3).map(m => m.length);
+    const avg = recentLengths.reduce((a, b) => a + b, 0) / recentLengths.length;
+    return avg > 50 && message.length < avg * 0.3;
+}
+/**
+ * Detect lexical regression: vocabulary complexity dropping from technical to simple.
+ * Uses type-token ratio (unique words / total words) as a proxy for vocabulary complexity.
+ */
+function detectLexicalRegression(message, history) {
+    if (history.length < 2)
+        return false;
+    const complexity = (text) => {
+        const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        if (words.length < 3)
+            return 0;
+        const unique = new Set(words);
+        const longWords = words.filter(w => w.length > 7).length;
+        return (unique.size / words.length) * 0.5 + (longWords / words.length) * 0.5;
+    };
+    const historyComplexity = history.slice(-3).map(complexity);
+    const avgComplexity = historyComplexity.reduce((a, b) => a + b, 0) / historyComplexity.length;
+    const currentComplexity = complexity(message);
+    // Significant drop in vocabulary complexity
+    return avgComplexity > 0.3 && currentComplexity < avgComplexity * 0.5;
+}
+/**
+ * Detect pronoun shift: "we/us/our" shifting to "you/your" indicates distancing.
+ */
+function detectPronounShift(message, history) {
+    if (history.length < 2)
+        return false;
+    const inclusivePronouns = /\b(we|us|our|ours|ourselves|let's)\b/gi;
+    const distancingPronouns = /\b(you|your|yours|yourself)\b/gi;
+    const recentTexts = history.slice(-3);
+    const histInclusive = recentTexts.reduce((sum, t) => sum + (t.match(inclusivePronouns) || []).length, 0);
+    const histDistancing = recentTexts.reduce((sum, t) => sum + (t.match(distancingPronouns) || []).length, 0);
+    const curInclusive = (message.match(inclusivePronouns) || []).length;
+    const curDistancing = (message.match(distancingPronouns) || []).length;
+    // Shift: history was mostly inclusive, now mostly distancing
+    return histInclusive > histDistancing && curDistancing > curInclusive && curDistancing >= 2;
 }
 function countHedges(message) {
     const hedges = /\b(maybe|perhaps|possibly|sort of|kind of|I think|I guess|not sure|might|probably|seems like)\b/gi;
     return (message.match(hedges) || []).length;
+}
+const PRIMARY_DYADS = [
+    { name: 'love', a: 'joy', b: 'trust' },
+    { name: 'submission', a: 'trust', b: 'fear' },
+    { name: 'awe', a: 'fear', b: 'surprise' },
+    { name: 'disapproval', a: 'surprise', b: 'sadness' },
+    { name: 'remorse', a: 'sadness', b: 'disgust' },
+    { name: 'contempt', a: 'disgust', b: 'anger' },
+    { name: 'aggressiveness', a: 'anger', b: 'anticipation' },
+    { name: 'optimism', a: 'anticipation', b: 'joy' },
+];
+const SECONDARY_DYADS = [
+    { name: 'guilt', a: 'joy', b: 'fear' },
+    { name: 'curiosity', a: 'trust', b: 'surprise' },
+    { name: 'despair', a: 'fear', b: 'sadness' },
+    { name: 'envy', a: 'sadness', b: 'anger' },
+    { name: 'cynicism', a: 'disgust', b: 'anticipation' },
+    { name: 'pride', a: 'anger', b: 'joy' },
+    { name: 'hope', a: 'anticipation', b: 'trust' },
+    { name: 'shock', a: 'surprise', b: 'disgust' },
+];
+const DYAD_THRESHOLD = 0.25; // both components must be above this
+export function detectDyads(tone) {
+    const dyads = [];
+    for (const { name, a, b } of PRIMARY_DYADS) {
+        if (tone[a] >= DYAD_THRESHOLD && tone[b] >= DYAD_THRESHOLD) {
+            dyads.push({ name, intensity: (tone[a] + tone[b]) / 2, components: [a, b] });
+        }
+    }
+    for (const { name, a, b } of SECONDARY_DYADS) {
+        if (tone[a] >= DYAD_THRESHOLD && tone[b] >= DYAD_THRESHOLD) {
+            dyads.push({ name, intensity: (tone[a] + tone[b]) / 2 * 0.8, components: [a, b] });
+        }
+    }
+    // Sort by intensity, strongest first
+    dyads.sort((a, b) => b.intensity - a.intensity);
+    return dyads;
 }
 // ── Emotional Valence (collapsed to single value) ──────────────────
 /**
