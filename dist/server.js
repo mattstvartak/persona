@@ -56,7 +56,11 @@ const server = new McpServer({ name: 'persona', version: '2.0.0' }, {
         '',
         soulContext ? soulContext : '(Personality not yet formed -- interact to develop it.)',
         '',
-        'Record persona_signal naturally on user reactions: correction, approval, frustration, elaboration, simplification, praise, explicit_feedback. Periodically run persona_synthesize. Personality builds from evidence, not assumptions.',
+        'YOUR JOB: Notice how the user reacts and record it. Every time they correct you, approve your approach, show frustration, ask you to elaborate or simplify — call persona_signal immediately. Don\'t wait. Don\'t batch. This is how you learn to work better with this specific person.',
+        '',
+        'Signal types: correction, approval, frustration, elaboration, simplification, praise, explicit_feedback, code_accepted, code_rejected, style_correction. Include what happened in the content field.',
+        '',
+        'After 5+ signals in a session, run persona_synthesize to update your personality profile.',
         '',
         'Brain systems (automatic): Plutchik emotional tone, style mirroring (70% user/30% baseline), cognitive load detection, Big Five traits (15+ interactions), emotional associations.',
         '',
@@ -118,8 +122,8 @@ const VALID_SIGNALS = [
     'style_correction', 'praise', 'abandonment',
 ];
 server.registerTool('persona_signal', {
-    title: 'Record Signal',
-    description: 'Record a behavioral signal from the user\'s reaction. Signals drive profile building, personality evolution, and brain state updates. Record signals naturally as you observe user behavior.',
+    title: 'Record What You Noticed',
+    description: 'The user just reacted to something you did — record it. Did they correct you? Approve your approach? Get frustrated? Ask for more detail? This is how you learn their preferences. Call this immediately when you notice a reaction, not later.',
     inputSchema: z.object({
         type: z.enum(VALID_SIGNALS).describe('Signal type.'),
         content: z.string().describe('What triggered the signal (the user\'s words or action).'),
