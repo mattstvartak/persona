@@ -112,6 +112,7 @@ export interface TraitState {
     emotionalAssociations: EmotionalAssociation[];
     sessionsAnalyzed: number;
     lastConsolidation: string;
+    domainTechnicalRatio: number;
 }
 export interface EmotionalAssociation {
     topic: string;

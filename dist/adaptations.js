@@ -96,17 +96,20 @@ export function getAdaptations(config, category) {
     // ── Big Five insights (only when reliable) ───────────────────
     if (traitState.bigFive.reliable) {
         const bf = traitState.bigFive;
+        const domainNote = traitState.domainTechnicalRatio > 0.5
+            ? ' (domain-adjusted for technical communication)'
+            : '';
         if (bf.openness > 0.7) {
-            lines.push('User scores high on openness. Offer creative alternatives and hypotheticals.');
+            lines.push(`User scores high on openness${domainNote}. Offer creative alternatives and hypotheticals.`);
         }
         if (bf.conscientiousness > 0.7) {
-            lines.push('User is highly conscientious. Be structured and precise.');
+            lines.push(`User is highly conscientious${domainNote}. Be structured and precise.`);
         }
         if (bf.neuroticism > 0.6) {
-            lines.push('User may be stress-sensitive. Be reassuring without being patronizing.');
+            lines.push(`User may be stress-sensitive${domainNote}. Be reassuring without being patronizing.`);
         }
         if (bf.agreeableness < 0.3) {
-            lines.push('User is direct and blunt. Match that directness. Don\'t soften or hedge.');
+            lines.push(`User is direct and blunt${domainNote}. Match that directness. Don't soften or hedge.`);
         }
     }
     // ── Emotional context ────────────────────────────────────────
@@ -194,8 +197,9 @@ export function getProfileSummary(config) {
     // Big Five summary
     if (traitState.bigFive.reliable) {
         const bf = traitState.bigFive;
+        const domainLabel = traitState.domainTechnicalRatio > 0.5 ? 'technical' : traitState.domainTechnicalRatio > 0.2 ? 'mixed' : 'casual';
         lines.push('');
-        lines.push(`Big Five (${bf.sampleCount} samples):`);
+        lines.push(`Big Five (${bf.sampleCount} samples, ${domainLabel} domain):`);
         lines.push(`  Openness: ${traitLabel(bf.openness)} (${bf.openness.toFixed(2)})`);
         lines.push(`  Conscientiousness: ${traitLabel(bf.conscientiousness)} (${bf.conscientiousness.toFixed(2)})`);
         lines.push(`  Extraversion: ${traitLabel(bf.extraversion)} (${bf.extraversion.toFixed(2)})`);

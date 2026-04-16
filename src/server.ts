@@ -11,7 +11,7 @@ import { getAdaptations, getProfileSummary, setSessionState, getSessionState } f
 import { generateProposals, loadProposals, applyProposal, rejectProposal } from './evolution.js';
 import { analyzeUserMessages, updateSoulFromSynthesis } from './synthesis.js';
 import { detectEmotionalTone, emotionalValence, emotionalArousal, detectDyads, loadTraitState, saveTraitState, updateEmotionalAssociation } from './emotions.js';
-import { updateBigFive, computeStyleVector, updateBaselineStyle } from './traits.js';
+import { updateBigFive, computeStyleVector, updateBaselineStyle, detectTechnicalDomain } from './traits.js';
 import { updateCognitiveLoad, getVerbosityMultiplier } from './cognitive-load.js';
 import { runConsolidation, recordSessionSummary } from './consolidation.js';
 import type { SignalType, SessionState } from './types.js';
@@ -50,9 +50,11 @@ function processUserMessage(message: string): void {
   // Cognitive load
   session.cognitiveLoad = updateCognitiveLoad(session.cognitiveLoad, message, lastUserMessage);
 
-  // Big Five trait update (slow, cross-session)
+  // Big Five trait update (slow, cross-session) with domain adjustment
   const traitState = loadTraitState(config);
-  traitState.bigFive = updateBigFive(traitState.bigFive, message);
+  const techRatio = detectTechnicalDomain(message);
+  traitState.domainTechnicalRatio = traitState.domainTechnicalRatio * 0.95 + techRatio * 0.05;
+  traitState.bigFive = updateBigFive(traitState.bigFive, message, traitState.domainTechnicalRatio);
   traitState.baselineStyleVector = updateBaselineStyle(traitState.baselineStyleVector, msgStyle);
   saveTraitState(config, traitState);
 
@@ -144,6 +146,48 @@ server.registerTool(
     if (userMessage) processUserMessage(userMessage);
     const adaptations = getAdaptations(config, category);
     return text(adaptations || 'No adaptations yet. Record signals to build a profile.');
+  }
+);
+
+server.registerTool(
+  'persona_state',
+  {
+    title: 'Get Persona State (Engram Bridge)',
+    description: 'Lightweight emotional/cognitive state snapshot for bridging with Engram. Returns valence, arousal, cognitive load, and domain context — pass these to memory_ingest and memory_search.',
+    inputSchema: z.object({}),
+  },
+  async () => {
+    const session = getSessionState();
+    const traitState = loadTraitState(config);
+    const tone = session.emotionalTone;
+
+    // Compute valence: (positive emotions - negative emotions) / max possible
+    const positiveSum = tone.joy + tone.trust + tone.anticipation;
+    const negativeSum = tone.anger + tone.fear + tone.sadness + tone.disgust;
+    const valence = (positiveSum - negativeSum) / Math.max(1, positiveSum + negativeSum);
+
+    // Compute arousal: surprise + anger + fear + joy (high-activation emotions)
+    const arousal = Math.min(1, (tone.surprise + tone.anger + tone.fear + tone.joy) / 2);
+
+    // Map cognitive load to Engram's expected format
+    const cogLoad = session.cognitiveLoad;
+    const cognitiveLoadLevel = cogLoad.overloaded ? 'high' : cogLoad.inFlow ? 'low' : 'normal';
+
+    // Map sentiment for Engram
+    let sentiment: string = 'neutral';
+    if (tone.anger > 0.4 || tone.disgust > 0.3) sentiment = 'frustrated';
+    else if (tone.joy > 0.4) sentiment = 'excited';
+    else if (tone.trust > 0.4) sentiment = 'satisfied';
+    else if (tone.surprise > 0.4) sentiment = 'curious';
+    else if (tone.fear > 0.3 || tone.sadness > 0.3) sentiment = 'confused';
+
+    return json({
+      emotionalValence: Math.round(valence * 100) / 100,
+      emotionalArousal: Math.round(arousal * 100) / 100,
+      sentiment,
+      cognitiveLoad: cognitiveLoadLevel,
+      domainContext: traitState.domainTechnicalRatio > 0.5 ? 'technical' : traitState.domainTechnicalRatio > 0.2 ? 'mixed' : 'casual',
+    });
   }
 );
 
@@ -284,6 +328,8 @@ server.registerTool(
             neuroticism: traitState.bigFive.neuroticism.toFixed(2),
           } : 'building...',
         },
+        domainContext: traitState.domainTechnicalRatio > 0.5 ? 'technical' : traitState.domainTechnicalRatio > 0.2 ? 'mixed' : 'casual',
+        domainTechnicalRatio: traitState.domainTechnicalRatio.toFixed(2),
         emotionalAssociations: traitState.emotionalAssociations.length,
         sessionsAnalyzed: traitState.sessionsAnalyzed,
         lastConsolidation: traitState.lastConsolidation,
@@ -509,11 +555,12 @@ server.registerTool(
     const parsed: string[] = JSON.parse(messages);
     const traits = analyzeUserMessages(parsed);
 
-    // Run Big Five inference on the messages
+    // Run Big Five inference on the messages with domain detection
     const traitState = loadTraitState(config);
     let tempBigFive = { ...traitState.bigFive };
     for (const msg of parsed) {
-      tempBigFive = updateBigFive(tempBigFive, msg);
+      const techRatio = detectTechnicalDomain(msg);
+      tempBigFive = updateBigFive(tempBigFive, msg, techRatio);
     }
 
     // Compute average style vector

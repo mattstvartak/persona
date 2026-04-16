@@ -55,6 +55,7 @@ export const DEFAULT_TRAIT_STATE = {
     emotionalAssociations: [],
     sessionsAnalyzed: 0,
     lastConsolidation: new Date().toISOString(),
+    domainTechnicalRatio: 0,
 };
 export const DEFAULT_CONFIG = {
     dataDir: '',

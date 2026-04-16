@@ -17,68 +17,131 @@ import { DEFAULT_BIG_FIVE, DEFAULT_STYLE_VECTOR } from './types.js';
 const EMA_DECAY = 0.95;
 const RELIABILITY_THRESHOLD = 15;
 
+// ── Domain Detection ───────────────────────────────────────────────
+
+/**
+ * Technical domain indicators — programming, engineering, devops.
+ * These patterns are common in technical communication but don't
+ * reflect personality traits.
+ */
+const TECHNICAL_MARKERS = /\b(function|const|let|var|import|export|class|interface|type|return|async|await|null|undefined|boolean|string|number|array|object|error|exception|bug|debug|deploy|build|compile|lint|test|commit|merge|branch|pull request|PR|API|endpoint|route|query|schema|migration|database|server|client|component|hook|state|props|config|env|docker|container|kubernetes|CI\/CD|pipeline|npm|pnpm|yarn|git|repo|codebase|refactor|typescript|javascript|python|rust|react|next\.js|node|express|payload|prisma|postgres|redis|vercel|aws|http|https|REST|GraphQL|JSON|YAML|CSS|HTML|DOM|SDK|CLI|ORM|SQL|CRUD|MVC)\b/gi;
+
+const CODE_PATTERNS = /(`[^`]+`|```[\s\S]*?```|[a-zA-Z]+\.[a-zA-Z]+\(|\/[a-z]+\/[a-z]+|[A-Z][a-z]+[A-Z]|[a-z]+_[a-z]+|->|=>|===|!==|\?\?|\.\.\.)/g;
+
+/**
+ * Detect how technical a message is. Returns 0 (casual) to 1 (fully technical).
+ */
+export function detectTechnicalDomain(message: string): number {
+  const words = message.split(/\s+/);
+  const wordCount = words.length || 1;
+
+  const techMatches = (message.match(TECHNICAL_MARKERS) || []).length;
+  const codeMatches = (message.match(CODE_PATTERNS) || []).length;
+
+  // Technical density: what fraction of words are technical
+  const techDensity = clamp((techMatches + codeMatches) / wordCount, 0, 1);
+
+  // Threshold: >10% tech terms = increasingly technical context
+  return clamp(techDensity * 3, 0, 1);
+}
+
 // ── Big Five Inference ─────────────────────────────────────────────
 
 /**
- * Infer Big Five trait signals from a single message.
+ * Infer Big Five trait signals from a single message, adjusted for domain.
+ *
+ * Technical communication has strong conventions (bullet points, direct
+ * language, bug-related vocabulary) that skew raw OCEAN scores. Domain
+ * adjustment discounts expected-in-context signals and amplifies those
+ * that genuinely discriminate personality within the domain.
+ *
  * Returns raw observation scores (0-1) per trait.
  */
-function inferTraitSignals(message: string): Omit<BigFiveTraits, 'sampleCount' | 'reliable'> {
+function inferTraitSignals(message: string, techRatio: number): Omit<BigFiveTraits, 'sampleCount' | 'reliable'> {
   const lower = message.toLowerCase();
   const words = message.split(/\s+/);
   const wordCount = words.length || 1;
 
+  // Inverse weight: how much to trust domain-conventional signals
+  // At techRatio=1, conventional signals are discounted to 30% weight
+  const conventionDiscount = 1 - techRatio * 0.7;
+  // Amplifier for signals that genuinely discriminate personality in technical context
+  const discriminatorBoost = 1 + techRatio * 0.3;
+
   // ── Openness ──────────────────────────────────────────────
-  // Vocabulary diversity (type-token ratio), hypotheticals, topic variety
+  // Technical vocab inflates type-token ratio — discount it in technical context
+  // Hypotheticals and creative alternatives are genuine openness signals everywhere
   const uniqueWords = new Set(words.map(w => w.toLowerCase().replace(/[^a-z]/g, '')).filter(w => w.length > 2));
   const typeTokenRatio = uniqueWords.size / wordCount;
   const hypotheticals = (lower.match(/\b(what if|imagine|consider|could we|would it|explore|alternative|maybe we could)\b/g) || []).length;
-  const openness = clamp(typeTokenRatio * 0.7 + Math.min(1, hypotheticals / 3) * 0.3, 0, 1);
+  // In technical context, also look for cross-domain analogies and creative framing
+  const creativeFraming = (lower.match(/\b(like a|similar to|reminds me of|analogy|metaphor|think of it as|picture)\b/g) || []).length;
+  const openness = clamp(
+    typeTokenRatio * 0.7 * conventionDiscount +
+    Math.min(1, hypotheticals / 3) * 0.3 * discriminatorBoost +
+    Math.min(1, creativeFraming / 2) * 0.15 * techRatio,  // bonus only in technical context
+    0, 1
+  );
 
   // ── Conscientiousness ─────────────────────────────────────
-  // Structure markers, specificity, follow-through language
-  const structureMarkers = (message.match(/^\s*[-*\d.]+/gm) || []).length;  // bullets/numbers
+  // Bullets and specificity words are conventions in technical writing — discount them
+  // Follow-through language and process orientation are genuine discriminators
+  const structureMarkers = (message.match(/^\s*[-*\d.]+/gm) || []).length;
   const specifics = (lower.match(/\b(specifically|exactly|precisely|steps?|first|second|third|ensure|verify|check)\b/g) || []).length;
+  // Genuine conscientiousness: process discipline beyond conventions
+  const followThrough = (lower.match(/\b(before we|after that|make sure|don't forget|also need to|then we should|let's also|cleanup|todo)\b/g) || []).length;
   const conscientiousness = clamp(
-    Math.min(1, structureMarkers / 3) * 0.4 +
-    Math.min(1, specifics / 4) * 0.3 +
-    (wordCount > 50 ? 0.3 : wordCount > 20 ? 0.15 : 0),
+    Math.min(1, structureMarkers / 3) * 0.4 * conventionDiscount +
+    Math.min(1, specifics / 4) * 0.3 * conventionDiscount +
+    (wordCount > 50 ? 0.3 : wordCount > 20 ? 0.15 : 0) * conventionDiscount +
+    Math.min(1, followThrough / 3) * 0.25 * discriminatorBoost,
     0, 1
   );
 
   // ── Extraversion ──────────────────────────────────────────
-  // Message length, exclamation marks, personal anecdotes, social references
+  // Message length in technical context just means thorough explanation, not personality
+  // Social references and personal anecdotes remain valid discriminators
   const exclamations = (message.match(/!/g) || []).length;
   const socialRefs = (lower.match(/\b(my friend|my team|we|us|everyone|people|told me|said)\b/g) || []).length;
   const personalAnecdotes = (lower.match(/\b(I was|I went|I did|I had|one time|yesterday I|last week I)\b/g) || []).length;
+  // In technical context, "we" often means the team/project, not social extraversion
+  const genuineSocialRefs = (lower.match(/\b(my friend|everyone|people|told me|said)\b/g) || []).length;
+  const technicalWe = socialRefs - genuineSocialRefs;
   const extraversion = clamp(
-    Math.min(1, exclamations / 3) * 0.25 +
-    Math.min(1, socialRefs / 3) * 0.25 +
-    Math.min(1, personalAnecdotes / 2) * 0.25 +
-    Math.min(1, wordCount / 200) * 0.25,
+    Math.min(1, exclamations / 3) * 0.25 * discriminatorBoost +
+    Math.min(1, (genuineSocialRefs + technicalWe * conventionDiscount) / 3) * 0.25 +
+    Math.min(1, personalAnecdotes / 2) * 0.25 * discriminatorBoost +
+    Math.min(1, wordCount / 200) * 0.25 * conventionDiscount,
     0, 1
   );
 
   // ── Agreeableness ─────────────────────────────────────────
-  // Hedging, gratitude, conflict avoidance, softening
+  // "fix this", "broken", "don't" are normal technical communication — discount bluntness
+  // Genuine low agreeableness: dismissiveness, personal criticism, impatience with people
   const hedges = (lower.match(/\b(maybe|perhaps|I think|I guess|sort of|kind of|if that's ok|no worries|sorry)\b/g) || []).length;
   const gratitude = (lower.match(/\b(thanks|thank you|appreciate|grateful|please|kindly)\b/g) || []).length;
-  const bluntness = (lower.match(/\b(just do|wrong|no\.|stop|don't|fix this|broken)\b/g) || []).length;
+  const techBluntness = (lower.match(/\b(fix this|broken|bug|error|wrong|failed|failing)\b/g) || []).length;
+  const personalBluntness = (lower.match(/\b(stupid|ridiculous|obviously|waste of time|pointless|why would you|that's dumb)\b/g) || []).length;
   const agreeableness = clamp(
-    (Math.min(1, hedges / 4) * 0.35 + Math.min(1, gratitude / 3) * 0.35) -
-    Math.min(0.5, bluntness / 4) * 0.3 + 0.3,  // 0.3 baseline
+    (Math.min(1, hedges / 4) * 0.35 + Math.min(1, gratitude / 3) * 0.35) * discriminatorBoost -
+    Math.min(0.5, techBluntness / 4) * 0.3 * conventionDiscount -
+    Math.min(0.5, personalBluntness / 3) * 0.4 * discriminatorBoost +
+    0.3,  // baseline
     0, 1
   );
 
   // ── Neuroticism ───────────────────────────────────────────
-  // Negative emotion words, catastrophizing, reassurance-seeking
-  const negativeWords = (lower.match(/\b(frustrated|annoyed|worried|stressed|broken|failing|terrible|awful|panic|impossible|never works)\b/g) || []).length;
-  const catastrophizing = (lower.match(/\b(everything|always|never|nothing works|completely|totally broken)\b/g) || []).length;
+  // "broken", "failing", "never works" describe actual bugs in technical context
+  // Genuine neuroticism: emotional escalation beyond the problem at hand
+  const techNegatives = (lower.match(/\b(broken|failing|error|crashed|bug|issue|problem|exception)\b/g) || []).length;
+  const emotionalNegatives = (lower.match(/\b(frustrated|annoyed|worried|stressed|terrible|awful|panic|impossible|hate|angry|furious)\b/g) || []).length;
+  const catastrophizing = (lower.match(/\b(everything is|always breaks|never works|nothing works|completely|totally broken|give up)\b/g) || []).length;
   const reassurance = (lower.match(/\b(right\?|is that ok|does that make sense|am I wrong|should I)\b/g) || []).length;
   const neuroticism = clamp(
-    Math.min(1, negativeWords / 4) * 0.4 +
-    Math.min(1, catastrophizing / 3) * 0.35 +
-    Math.min(1, reassurance / 3) * 0.25,
+    Math.min(1, techNegatives / 4) * 0.2 * conventionDiscount +
+    Math.min(1, emotionalNegatives / 3) * 0.35 * discriminatorBoost +
+    Math.min(1, catastrophizing / 3) * 0.35 * discriminatorBoost +
+    Math.min(1, reassurance / 3) * 0.1,
     0, 1
   );
 
@@ -88,9 +151,10 @@ function inferTraitSignals(message: string): Omit<BigFiveTraits, 'sampleCount' |
 /**
  * Update Big Five traits using exponential moving average.
  * Traits update slowly (EMA decay 0.95) to represent stable personality.
+ * Domain context adjusts which signals are weighted as personality vs convention.
  */
-export function updateBigFive(current: BigFiveTraits, message: string): BigFiveTraits {
-  const signals = inferTraitSignals(message);
+export function updateBigFive(current: BigFiveTraits, message: string, techRatio: number): BigFiveTraits {
+  const signals = inferTraitSignals(message, techRatio);
   const count = current.sampleCount + 1;
 
   return {

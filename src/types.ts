@@ -196,6 +196,7 @@ export interface TraitState {
   emotionalAssociations: EmotionalAssociation[];
   sessionsAnalyzed: number;
   lastConsolidation: string;
+  domainTechnicalRatio: number;  // 0 (casual) to 1 (fully technical), EMA-tracked
 }
 
 export interface EmotionalAssociation {
@@ -221,6 +222,7 @@ export const DEFAULT_TRAIT_STATE: TraitState = {
   emotionalAssociations: [],
   sessionsAnalyzed: 0,
   lastConsolidation: new Date().toISOString(),
+  domainTechnicalRatio: 0,
 };
 
 // ── Config ──────────────────────────────────────────────────────────
