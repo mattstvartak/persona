@@ -90,7 +90,7 @@ It won't write anything until there's enough data though. 5 messages minimum for
 
 ### Evolution Proposals
 
-Every 20 signals (configurable), the engine looks at patterns and generates proposals. These are concrete edits to soul files, each with a target file, an action (add/remove/replace), the content, a rationale, a confidence score, and the signal evidence that triggered it.
+Every 12 signals (configurable), the engine looks at patterns and generates proposals. These are concrete edits to soul files, each with a target file, an action (add/remove/replace), the content, a rationale, a confidence score, and the signal evidence that triggered it.
 
 Nothing auto-applies. Proposals sit in a queue until you (or the agent) explicitly applies or rejects them. You stay in control of how the personality evolves.
 
@@ -111,7 +111,7 @@ Version 2 adds a set of systems modeled after how the human brain actually proce
 
 ### Emotional Tone Detection
 
-Based on [Plutchik's wheel of emotions](https://en.wikipedia.org/wiki/Plutchik%27s_wheel_of_emotions). Every message gets scored across 8 primary emotions (joy, trust, fear, surprise, sadness, disgust, anger, anticipation) as a float vector. Compound emotions emerge naturally from the vector: contempt is anger + disgust, awe is surprise + fear, and so on.
+Based on [Plutchik's wheel of emotions](https://en.wikipedia.org/wiki/Plutchik%27s_wheel_of_emotions). Every message gets scored across 8 primary emotions (joy, trust, fear, surprise, sadness, disgust, anger, anticipation) as a float vector. 16 compound emotions are explicitly detected: 8 primary dyads (love = joy + trust, submission = trust + fear, etc.) and 8 secondary dyads (guilt = joy + fear, curiosity = trust + surprise, etc.). These give richer emotional context than raw primary scores alone.
 
 The system also detects "text micro-expressions," a concept adapted from Paul Ekman's work on facial micro-expressions. In text, these show up as punctuation shifts (periods after exclamation marks = mood drop), message length drops (sudden 80% shorter = something shut the user down), ALL CAPS clustering, and hedge accumulation ("maybe", "sort of", "I think" clustering = low confidence).
 
@@ -122,6 +122,8 @@ Emotional associations form asymmetrically, modeled after how the amygdala encod
 Infers the user's personality along the [Big Five / OCEAN dimensions](https://en.wikipedia.org/wiki/Big_Five_personality_traits) from text signals. Openness tracks vocabulary diversity and hypothetical engagement. Conscientiousness looks at message structure and specificity. Extraversion measures social references and energy markers. Agreeableness detects hedging vs bluntness. Neuroticism picks up negative emotion language and reassurance-seeking.
 
 Uses exponential moving average with 0.95 decay per interaction so the scores represent stable traits, not momentary states. Won't act on the results until 15+ interactions have been analyzed (that's the threshold where psychometric reliability stabilizes). Once reliable, the Big Five scores inform adaptations: high openness users get creative alternatives, high conscientiousness users get structured responses, low agreeableness users get matched directness.
+
+**Domain-adjusted baselines.** Technical communication naturally skews Big Five signals — bullet-point formatting reads as high conscientiousness, terse commands read as low agreeableness, "fix this" reads as low openness. The system now tracks a technical communication context score (0-1) via EMA and discounts convention-driven signals in technical contexts while amplifying genuine personality discriminators like emotional escalation or creative framing.
 
 ### Style Mirroring
 
@@ -248,11 +250,11 @@ Then point your MCP client at `dist/server.js`:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `maxSignals` | `500` | Signal buffer size (FIFO) |
-| `proposalThreshold` | `20` | Signals between auto-generating proposals |
+| `proposalThreshold` | `12` | Signals between auto-generating proposals |
 
 ## Tools
 
-15 tools across six groups.
+18 tools across eight groups.
 
 ### Context & Adaptations
 
@@ -302,7 +304,14 @@ Then point your MCP client at `dist/server.js`:
 
 | Tool | What it does |
 |------|-------------|
-| `persona_consolidate` | Run the between-session consolidation pass. Decays stale emotions, detects drift, checks for sycophancy. |
+| `persona_consolidate` | Run the between-session consolidation pass. Decays stale emotions, detects drift, checks for sycophancy. Auto-syncs the Engram bridge as a best-effort step. Also runs automatically on startup if >24h since last consolidation. |
+
+### Bridge
+
+| Tool | What it does |
+|------|-------------|
+| `persona_state` | Lightweight bridge endpoint for Engram — returns current emotional valence, arousal, and cognitive load so Engram can weight memory importance and gate search results. |
+| `persona_procedural_sync` | Sync evolution proposals with Engram's procedural rules via shared bridge file (`~/.claude/procedural-bridge.json`). Applied proposals export as rules; imported Engram rules become pending proposals with conflict detection. |
 
 ## Slash Commands
 
@@ -411,7 +420,13 @@ Persona handles *how* the agent talks to you. Engram handles *what* it remembers
 
 Engram learns that you prefer TypeScript over Python. Persona learns that you want short answers with code first. Engram stores the fact that you got laid off last month. Persona picks up on the emotional context around that and knows to be thoughtful about how it comes up.
 
-When both MCP servers are running, Engram's system prompt tells the agent to call `persona_signal` when it notices corrections, approvals, or style preferences. The agent calls `persona_context` at the start of complex interactions to calibrate. No extra config needed. They find each other through MCP.
+When both MCP servers are running, they coordinate through three mechanisms:
+
+1. **Emotion-weighted memory importance.** Persona exposes `persona_state` with current emotional valence, arousal, and cognitive load. Engram calls this during ingestion — high-arousal negative emotions boost memory importance by up to 30%, so frustrated corrections get remembered more strongly than neutral facts.
+
+2. **Cognitive-load-gated search.** When Persona detects cognitive overload, Engram's search receives the load signal and returns only the top 3 high-importance memories instead of the full set. Less noise when you're already overwhelmed.
+
+3. **Procedural bridge.** Persona's applied evolution proposals and Engram's learned procedural rules sync through a shared file at `~/.claude/procedural-bridge.json`. Persona proposals become Engram rules. Engram rules become Persona proposals with conflict detection against existing soul files. The bridge auto-syncs during `persona_consolidate`.
 
 Persona works fine solo. But if you want an agent that feels like it genuinely knows you, not just how to talk to you but what you've told it, run both.
 
