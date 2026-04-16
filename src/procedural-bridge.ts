@@ -176,9 +176,16 @@ function mapRuleToProposal(domain: string): { type: ProposalType; target: keyof 
 function checkSoulConflict(rule: string, soulFiles: Record<keyof SoulFiles, string>): string | null {
   const ruleLower = rule.toLowerCase();
 
-  // Check for direct contradictions with soul file content
-  const negations = ['not', 'never', "don't", 'avoid', 'stop'];
+  const negations = ['not', 'never', "don't", 'avoid', 'stop', "won't", 'without'];
   const ruleHasNeg = negations.some(n => ruleLower.includes(n));
+  const ruleWords = new Set(ruleLower.split(/\s+/).filter(w => w.length > 3));
+
+  // Antonym pairs for semantic conflict detection
+  const antonymPairs: [string, string][] = [
+    ['always', 'never'], ['verbose', 'terse'], ['include', 'exclude'],
+    ['more', 'less'], ['enable', 'disable'], ['add', 'remove'],
+    ['before', 'after'], ['allow', 'block'],
+  ];
 
   for (const [fileName, content] of Object.entries(soulFiles)) {
     if (!content) continue;
@@ -187,14 +194,36 @@ function checkSoulConflict(rule: string, soulFiles: Record<keyof SoulFiles, stri
 
     for (const line of lines) {
       const lineHasNeg = negations.some(n => line.includes(n));
+      const lineWords = new Set(line.split(/\s+/).filter(w => w.length > 3));
 
-      // One has negation, the other doesn't, and they share key words
+      // Negation inversion check (lowered threshold to 2 shared words)
       if (ruleHasNeg !== lineHasNeg) {
-        const ruleWords = new Set(ruleLower.split(/\s+/).filter(w => w.length > 4));
-        const lineWords = new Set(line.split(/\s+/).filter(w => w.length > 4));
         let overlap = 0;
         for (const w of ruleWords) if (lineWords.has(w)) overlap++;
-        if (overlap >= 3) return `${fileName}.md: "${line.trim().slice(0, 60)}..."`;
+        if (overlap >= 2) return `${fileName}.md: "${line.trim().slice(0, 60)}..."`;
+      }
+
+      // Antonym-based contradiction
+      for (const [pos, neg] of antonymPairs) {
+        if ((ruleLower.includes(pos) && line.includes(neg)) ||
+            (ruleLower.includes(neg) && line.includes(pos))) {
+          const filteredRuleWords = new Set([...ruleWords].filter(w => w !== pos && w !== neg));
+          const filteredLineWords = new Set([...lineWords].filter(w => w !== pos && w !== neg));
+          let overlap = 0;
+          for (const w of filteredRuleWords) if (filteredLineWords.has(w)) overlap++;
+          if (overlap >= 2) return `${fileName}.md: "${line.trim().slice(0, 60)}..."`;
+        }
+      }
+
+      // Value contradiction: same predicate, different object
+      const predicates = ['prefers?', 'uses?', 'wants?'];
+      for (const pred of predicates) {
+        const regex = new RegExp(`\\b${pred}\\s+(\\S+)`, 'i');
+        const ruleMatch = ruleLower.match(regex);
+        const lineMatch = line.match(regex);
+        if (ruleMatch && lineMatch && ruleMatch[1] !== lineMatch[1]) {
+          return `${fileName}.md: "${line.trim().slice(0, 60)}..."`;
+        }
       }
     }
   }

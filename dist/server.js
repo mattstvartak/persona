@@ -25,20 +25,15 @@ function text(t) { return { content: [{ type: 'text', text: t }] }; }
 function json(data) { return text(JSON.stringify(data, null, 2)); }
 // ── Helper: process a user message through all brain systems ───────
 function processUserMessage(message) {
-    // Emotional tone detection (Plutchik) -- now with message history for micro-expressions
     const tone = detectEmotionalTone(message, session.recentMessages);
-    // Blend with existing session tone (EMA with 0.3 learning rate for session)
     for (const key of Object.keys(tone)) {
         session.emotionalTone[key] = session.emotionalTone[key] * 0.7 + tone[key] * 0.3;
     }
-    // Style vector (chameleon effect mirroring)
     const msgStyle = computeStyleVector(message);
     for (const key of Object.keys(msgStyle)) {
         session.styleVector[key] = session.styleVector[key] * 0.7 + msgStyle[key] * 0.3;
     }
-    // Cognitive load
     session.cognitiveLoad = updateCognitiveLoad(session.cognitiveLoad, message, lastUserMessage);
-    // Big Five trait update (slow, cross-session) with domain adjustment
     const traitState = loadTraitState(config);
     const techRatio = detectTechnicalDomain(message);
     traitState.domainTechnicalRatio = traitState.domainTechnicalRatio * 0.95 + techRatio * 0.05;
@@ -46,95 +41,65 @@ function processUserMessage(message) {
     traitState.baselineStyleVector = updateBaselineStyle(traitState.baselineStyleVector, msgStyle);
     saveTraitState(config, traitState);
     session.messageCount++;
-    // Maintain rolling window of last 5 messages for micro-expression detection
     session.recentMessages = [...session.recentMessages, message].slice(-5);
     lastUserMessage = message;
     setSessionState(session);
 }
 // ── MCP Server ────────────────────────────────────────────────────
 const soulContext = buildSoulContext(soulFiles);
-const server = new McpServer({ name: 'persona', version: '2.0.0' }, {
+const server = new McpServer({ name: 'persona', version: '2.1.0' }, {
     instructions: [
         '# Persona',
-        'Adaptive personality system. Honest, not agreeable. Style emerges from interactions.',
+        'Adaptive personality. Honest, not agreeable. Style emerges from interactions.',
+        soulContext ? '' : '(Personality not yet formed.)',
+        soulContext || '',
         '',
-        soulContext ? soulContext : '(Personality not yet formed -- interact to develop it.)',
-        '',
-        'YOUR JOB: Notice how the user reacts and record it. Every time they correct you, approve your approach, show frustration, ask you to elaborate or simplify — call persona_signal immediately. Don\'t wait. Don\'t batch. This is how you learn to work better with this specific person.',
-        '',
-        'Signal types: correction, approval, frustration, elaboration, simplification, praise, explicit_feedback, code_accepted, code_rejected, style_correction. Include what happened in the content field.',
-        '',
-        'After 5+ signals in a session, run persona_synthesize to update your personality profile.',
-        '',
-        'Brain systems (automatic): Plutchik emotional tone, style mirroring (70% user/30% baseline), cognitive load detection, Big Five traits (15+ interactions), emotional associations.',
-        '',
-        'Anti-sycophancy: never optimize for approval. Honesty overrides all adaptations.',
-        '',
-        'If engram/smart-memory available: memory = WHAT (facts), persona = HOW (tone, style).',
-        '',
-        'SLASH COMMANDS:',
-        '/persona-evolve [generate|history] -- Review/apply evolution proposals.',
-        '/persona-soul [personality|style|skill] [edit] -- View/edit soul files.',
-        '/persona-profile [detailed] -- Show learned preferences and traits.',
-        '/persona-analyze [sync] -- Analyze communication style; "sync" to apply.',
-        '/persona-reset [preset] -- Reset or load preset (pair-programmer, mentor, analyst, creative, minimal).',
-        '/persona-tune <instruction> -- Quick adjustment via natural language.',
-    ].join('\n'),
+        'Record user reactions immediately with persona_signal: correction, approval, frustration, elaboration, simplification, praise, explicit_feedback, code_accepted, code_rejected, style_correction.',
+        'After 5+ signals: run persona_synthesize.',
+        'If engram available: memory = WHAT, persona = HOW.',
+    ].filter(Boolean).join('\n'),
 });
 // ─────────────────────────────────────────────────────────────────────
-// CONTEXT & ADAPTATIONS
+// CONTEXT
 // ─────────────────────────────────────────────────────────────────────
 server.registerTool('persona_context', {
-    title: 'Get Persona Context',
-    description: 'Get the full personality context (soul files + learned adaptations + brain state). Use at the start of complex interactions to calibrate your response style.',
+    title: 'Get Context',
+    description: 'Full personality context: soul files + adaptations + brain state. Pass adaptationsOnly=true for just the adaptive directives.',
     inputSchema: z.object({
-        category: z.string().optional().describe('Topic category for category-specific adaptations (e.g. "code", "writing", "research").'),
-        userMessage: z.string().optional().describe('Current user message to process through brain systems before generating context.'),
+        category: z.string().optional().describe('Topic for category-specific adaptations.'),
+        userMessage: z.string().optional().describe('Process through brain systems first.'),
+        adaptationsOnly: z.boolean().optional().describe('If true, return only adaptations (not soul files).'),
     }),
-}, async ({ category, userMessage }) => {
+}, async ({ category, userMessage, adaptationsOnly }) => {
     if (userMessage)
         processUserMessage(userMessage);
+    const adaptations = getAdaptations(config, category);
+    // Adaptations-only mode (replaces old persona_adapt tool)
+    if (adaptationsOnly) {
+        return text(adaptations || 'No adaptations yet. Record signals to build a profile.');
+    }
     const files = readAllSoulFiles(config);
     const soul = buildSoulContext(files);
-    const adaptations = getAdaptations(config, category);
     const parts = [soul, adaptations].filter(Boolean);
-    // Add session brain state summary
     const brainState = getBrainStateSummary();
     if (brainState)
         parts.push(brainState);
     return text(parts.join('\n\n') || 'No personality configured.');
 });
-server.registerTool('persona_adapt', {
-    title: 'Get Adaptations',
-    description: 'Get learned behavioral adaptations for the current context. Returns style adjustments based on accumulated user signals and brain state.',
-    inputSchema: z.object({
-        category: z.string().optional().describe('Topic category for specific adaptations.'),
-        userMessage: z.string().optional().describe('Current user message to process.'),
-    }),
-}, async ({ category, userMessage }) => {
-    if (userMessage)
-        processUserMessage(userMessage);
-    const adaptations = getAdaptations(config, category);
-    return text(adaptations || 'No adaptations yet. Record signals to build a profile.');
-});
 server.registerTool('persona_state', {
-    title: 'Get Persona State (Engram Bridge)',
-    description: 'Lightweight emotional/cognitive state snapshot for bridging with Engram. Returns valence, arousal, cognitive load, and domain context — pass these to memory_ingest and memory_search.',
+    title: 'Emotional State',
+    description: 'Lightweight valence/arousal/cognitive-load snapshot. Pass values to memory_ingest and memory_search.',
     inputSchema: z.object({}),
 }, async () => {
     const session = getSessionState();
     const traitState = loadTraitState(config);
     const tone = session.emotionalTone;
-    // Compute valence: (positive emotions - negative emotions) / max possible
     const positiveSum = tone.joy + tone.trust + tone.anticipation;
     const negativeSum = tone.anger + tone.fear + tone.sadness + tone.disgust;
     const valence = (positiveSum - negativeSum) / Math.max(1, positiveSum + negativeSum);
-    // Compute arousal: surprise + anger + fear + joy (high-activation emotions)
     const arousal = Math.min(1, (tone.surprise + tone.anger + tone.fear + tone.joy) / 2);
-    // Map cognitive load to Engram's expected format
     const cogLoad = session.cognitiveLoad;
     const cognitiveLoadLevel = cogLoad.overloaded ? 'high' : cogLoad.inFlow ? 'low' : 'normal';
-    // Map sentiment for Engram
     let sentiment = 'neutral';
     if (tone.anger > 0.4 || tone.disgust > 0.3)
         sentiment = 'frustrated';
@@ -163,19 +128,17 @@ const VALID_SIGNALS = [
     'style_correction', 'praise', 'abandonment',
 ];
 server.registerTool('persona_signal', {
-    title: 'Record What You Noticed',
-    description: 'The user just reacted to something you did — record it. Did they correct you? Approve your approach? Get frustrated? Ask for more detail? This is how you learn their preferences. Call this immediately when you notice a reaction, not later.',
+    title: 'Record Signal',
+    description: 'Record a user reaction: correction, approval, frustration, elaboration, simplification, praise, etc. Call immediately when noticed.',
     inputSchema: z.object({
         type: z.enum(VALID_SIGNALS).describe('Signal type.'),
-        content: z.string().describe('What triggered the signal (the user\'s words or action).'),
-        context: z.string().optional().describe('Surrounding context for the signal.'),
-        category: z.string().optional().describe('Topic category (code, writing, research, etc.).'),
+        content: z.string().describe('What triggered it.'),
+        context: z.string().optional().describe('Surrounding context.'),
+        category: z.string().optional().describe('Topic (code, writing, research, etc.).'),
     }),
 }, async ({ type, content, context, category }) => {
     const signal = recordSignal(config, type, content, context, category);
-    // Process the content through brain systems
     processUserMessage(content);
-    // Update emotional associations for the category
     if (category) {
         const traitState = loadTraitState(config);
         const valence = type === 'approval' || type === 'praise' || type === 'code_accepted' ? 0.5 :
@@ -186,10 +149,8 @@ server.registerTool('persona_signal', {
             saveTraitState(config, traitState);
         }
     }
-    // Rebuild profile after each signal
     const signals = loadSignals(config);
     rebuildProfile(config, signals);
-    // Check if we should generate proposals
     const profile = loadProfile(config);
     const pending = loadProposals(config).filter(p => p.status === 'pending');
     if (profile.stats.totalSignals > 0 &&
@@ -228,15 +189,15 @@ server.registerTool('persona_signal', {
 // ─────────────────────────────────────────────────────────────────────
 server.registerTool('persona_profile', {
     title: 'View Profile',
-    description: 'View the behavioral profile -- aggregated style preferences, satisfaction rates, topic patterns, Big Five traits, and style baseline built from recorded signals.',
+    description: 'Behavioral profile: style preferences, satisfaction, topic patterns, Big Five traits.',
     inputSchema: z.object({}),
 }, async () => {
     const summary = getProfileSummary(config);
     return text(summary || 'No profile yet. Record signals to build one.');
 });
 server.registerTool('persona_stats', {
-    title: 'Persona Stats',
-    description: 'Overview of persona system: signal counts, profile state, pending proposals, soul file status, brain state, and trait progress.',
+    title: 'Stats',
+    description: 'System overview: signals, profile, proposals, soul files, brain state, bridge status.',
     inputSchema: z.object({}),
 }, async () => {
     const signals = loadSignals(config);
@@ -245,11 +206,26 @@ server.registerTool('persona_stats', {
     const proposals = loadProposals(config);
     const files = readAllSoulFiles(config);
     const traitState = loadTraitState(config);
+    // Bridge status (new observability)
+    let bridge = { status: 'no bridge file' };
+    try {
+        const { readFileSync, existsSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const { homedir } = await import('node:os');
+        const bridgePath = join(homedir(), '.claude', 'procedural-bridge.json');
+        if (existsSync(bridgePath)) {
+            const bridgeFile = JSON.parse(readFileSync(bridgePath, 'utf-8'));
+            bridge = {
+                lastUpdated: bridgeFile.lastUpdated,
+                totalRules: bridgeFile.rules.length,
+                engramRules: bridgeFile.rules.filter((r) => r.source === 'engram').length,
+                personaRules: bridgeFile.rules.filter((r) => r.source === 'persona').length,
+            };
+        }
+    }
+    catch { /* no bridge file */ }
     return json({
-        signals: {
-            total: signals.length,
-            byCounts: counts,
-        },
+        signals: { total: signals.length, byCounts: counts },
         profile: {
             satisfaction: profile.stats.avgSatisfaction,
             correctionRate: profile.stats.correctionRate,
@@ -294,6 +270,7 @@ server.registerTool('persona_stats', {
             style: files.style ? `${files.style.length} chars` : 'not set',
             skill: files.skill ? `${files.skill.length} chars` : 'not set',
         },
+        bridge,
         dataDir: config.dataDir,
     });
 });
@@ -302,30 +279,24 @@ server.registerTool('persona_stats', {
 // ─────────────────────────────────────────────────────────────────────
 server.registerTool('persona_proposals', {
     title: 'List Proposals',
-    description: 'List evolution proposals -- suggested personality changes based on accumulated behavioral evidence.',
+    description: 'Evolution proposals: suggested personality changes from behavioral evidence.',
     inputSchema: z.object({
-        status: z.enum(['pending', 'applied', 'rejected', 'all']).optional().describe('Filter by status (default: pending).'),
+        status: z.enum(['pending', 'applied', 'rejected', 'all']).optional().describe('Filter (default: pending).'),
     }),
 }, async ({ status }) => {
     const proposals = loadProposals(config);
     const filtered = status === 'all' ? proposals : proposals.filter(p => p.status === (status ?? 'pending'));
     return json(filtered.map(p => ({
-        id: p.id,
-        type: p.type,
-        target: p.target,
-        action: p.action,
-        content: p.content,
-        rationale: p.rationale,
-        confidence: p.confidence,
-        status: p.status,
-        createdAt: p.createdAt,
+        id: p.id, type: p.type, target: p.target, action: p.action,
+        content: p.content, rationale: p.rationale, confidence: p.confidence,
+        status: p.status, createdAt: p.createdAt,
     })));
 });
 server.registerTool('persona_apply', {
     title: 'Apply Proposal',
-    description: 'Apply a pending evolution proposal to the soul files.',
+    description: 'Apply a pending evolution proposal.',
     inputSchema: z.object({
-        proposalId: z.string().describe('The proposal ID to apply.'),
+        proposalId: z.string().describe('Proposal ID.'),
     }),
 }, async ({ proposalId }) => {
     const result = applyProposal(config, proposalId);
@@ -335,7 +306,7 @@ server.registerTool('persona_reject', {
     title: 'Reject Proposal',
     description: 'Reject a pending evolution proposal.',
     inputSchema: z.object({
-        proposalId: z.string().describe('The proposal ID to reject.'),
+        proposalId: z.string().describe('Proposal ID.'),
     }),
 }, async ({ proposalId }) => {
     const result = rejectProposal(config, proposalId);
@@ -343,7 +314,7 @@ server.registerTool('persona_reject', {
 });
 server.registerTool('persona_evolve', {
     title: 'Generate Proposals',
-    description: 'Manually trigger evolution proposal generation from accumulated signals. Normally auto-triggers every N signals.',
+    description: 'Manually trigger evolution proposal generation from accumulated signals.',
     inputSchema: z.object({}),
 }, async () => {
     const signals = loadSignals(config);
@@ -355,8 +326,7 @@ server.registerTool('persona_evolve', {
         generated: proposals.length,
         proposals: proposals.map(p => ({
             id: p.id, type: p.type, target: p.target,
-            content: p.content, rationale: p.rationale,
-            confidence: p.confidence,
+            content: p.content, rationale: p.rationale, confidence: p.confidence,
         })),
     });
 });
@@ -367,7 +337,7 @@ server.registerTool('persona_read', {
     title: 'Read Soul File',
     description: 'Read a soul file (personality, style, or skill).',
     inputSchema: z.object({
-        file: z.enum(['personality', 'style', 'skill']).describe('Which soul file to read.'),
+        file: z.enum(['personality', 'style', 'skill']).describe('Which file.'),
     }),
 }, async ({ file }) => {
     const content = readSoulFile(config, file);
@@ -375,18 +345,18 @@ server.registerTool('persona_read', {
 });
 server.registerTool('persona_edit', {
     title: 'Edit Soul File',
-    description: 'Edit a soul file directly. Use for major personality changes or to override evolution proposals.',
+    description: 'Overwrite a soul file directly.',
     inputSchema: z.object({
-        file: z.enum(['personality', 'style', 'skill']).describe('Which soul file to edit.'),
-        content: z.string().describe('New content for the soul file (replaces entire file).'),
+        file: z.enum(['personality', 'style', 'skill']).describe('Which file.'),
+        content: z.string().describe('New content (replaces entire file).'),
     }),
 }, async ({ file, content }) => {
     writeSoulFile(config, file, content);
     return text(`Updated ${file} soul file (${content.length} chars).`);
 });
 server.registerTool('persona_init', {
-    title: 'Initialize Persona',
-    description: 'Reset soul files to defaults. Only creates files that don\'t exist -- won\'t overwrite customizations.',
+    title: 'Initialize',
+    description: 'Reset soul files to defaults. Won\'t overwrite existing.',
     inputSchema: z.object({}),
 }, async () => {
     const files = initSoulFiles(config);
@@ -401,14 +371,13 @@ server.registerTool('persona_init', {
 // PERSONALITY SYNTHESIS
 // ─────────────────────────────────────────────────────────────────────
 server.registerTool('persona_synthesize', {
-    title: 'Synthesize Personality',
-    description: 'Analyze user messages to build/evolve the personality organically. Pass recent user messages and the system will extract communication traits and update soul files. Also processes messages through all brain systems (emotional tone, Big Five, style vector, cognitive load).',
+    title: 'Synthesize',
+    description: 'Analyze user messages, extract communication traits, update soul files, and process through brain systems.',
     inputSchema: z.object({
-        messages: z.string().describe('JSON array of user message strings: ["message1", "message2", ...]'),
+        messages: z.string().describe('JSON array of user message strings.'),
     }),
 }, async ({ messages }) => {
     const parsed = JSON.parse(messages);
-    // Process each message through brain systems
     for (const msg of parsed) {
         processUserMessage(msg);
     }
@@ -436,22 +405,20 @@ server.registerTool('persona_synthesize', {
     });
 });
 server.registerTool('persona_analyze', {
-    title: 'Analyze Communication Style',
-    description: 'Analyze user messages to understand their communication style without updating soul files. Includes emotional tone, Big Five inference, and style vector analysis.',
+    title: 'Analyze Style',
+    description: 'Analyze communication style without updating soul files. Emotional tone, Big Five, style vector.',
     inputSchema: z.object({
         messages: z.string().describe('JSON array of user message strings.'),
     }),
 }, async ({ messages }) => {
     const parsed = JSON.parse(messages);
     const traits = analyzeUserMessages(parsed);
-    // Run Big Five inference on the messages with domain detection
     const traitState = loadTraitState(config);
     let tempBigFive = { ...traitState.bigFive };
     for (const msg of parsed) {
         const techRatio = detectTechnicalDomain(msg);
         tempBigFive = updateBigFive(tempBigFive, msg, techRatio);
     }
-    // Compute average style vector
     const styleVectors = parsed.map(computeStyleVector);
     const avgStyle = {
         formality: avg(styleVectors.map(s => s.formality)),
@@ -460,7 +427,6 @@ server.registerTool('persona_analyze', {
         humor: avg(styleVectors.map(s => s.humor)),
         specificity: avg(styleVectors.map(s => s.specificity)),
     };
-    // Detect emotional tone from messages
     const tones = parsed.map(msg => detectEmotionalTone(msg));
     const avgTone = {};
     for (const key of Object.keys(tones[0] || {})) {
@@ -474,49 +440,25 @@ server.registerTool('persona_analyze', {
             extraversion: tempBigFive.extraversion.toFixed(2),
             agreeableness: tempBigFive.agreeableness.toFixed(2),
             neuroticism: tempBigFive.neuroticism.toFixed(2),
-            note: 'Snapshot from provided messages only. Full profile builds over 15+ interactions.',
+            note: 'Snapshot from provided messages only.',
         },
         styleVector: avgStyle,
         emotionalTone: avgTone,
     });
 });
 // ─────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────
-// PROCEDURAL BRIDGE (Engram ↔ Persona rule sync)
-// ─────────────────────────────────────────────────────────────────────
-server.registerTool('persona_procedural_sync', {
-    title: 'Sync Procedural Rules',
-    description: 'Sync procedural rules with Engram via the shared bridge file. "export" writes applied proposals to bridge, "import" reads Engram rules as new proposals, "sync" does both.',
-    inputSchema: z.object({
-        direction: z.enum(['export', 'import', 'sync']).describe('Sync direction.'),
-    }),
-}, async ({ direction }) => {
-    const { exportProposalsToBridge, importRulesFromBridge, syncBridge } = await import('./procedural-bridge.js');
-    if (direction === 'export') {
-        const count = exportProposalsToBridge(config);
-        return json({ exported: count });
-    }
-    if (direction === 'import') {
-        const result = importRulesFromBridge(config);
-        return json(result);
-    }
-    const result = syncBridge(config);
-    return json(result);
-});
-// ─────────────────────────────────────────────────────────────────────
-// CONSOLIDATION (between-session processing)
+// CONSOLIDATION
 // ─────────────────────────────────────────────────────────────────────
 server.registerTool('persona_consolidate', {
-    title: 'Run Consolidation',
-    description: 'Run the between-session consolidation pass. Inspired by sleep consolidation and the Default Mode Network. Decays stale emotional associations, detects style drift, checks for contradictions, and promotes consistent patterns to stable traits. Also syncs procedural rules with Engram bridge. Run at end of session or periodically.',
+    title: 'Consolidate',
+    description: 'Between-session consolidation: decay emotions, detect drift, check contradictions, promote patterns, sync Engram bridge.',
     inputSchema: z.object({}),
 }, async () => {
-    // Record current session before consolidating
     const signals = loadSignals(config);
     const counts = getSignalCounts(signals);
     recordSessionSummary(config, session, counts);
     const result = runConsolidation(config);
-    // Auto-sync procedural bridge during consolidation
+    // Auto-sync procedural bridge
     let bridgeSync = { exported: 0, imported: 0, skipped: 0, conflicts: [] };
     try {
         const { syncBridge } = await import('./procedural-bridge.js');
@@ -525,7 +467,6 @@ server.registerTool('persona_consolidate', {
     catch {
         // Bridge sync is best-effort
     }
-    // Reset session state for next session
     session = { ...DEFAULT_SESSION_STATE, startedAt: new Date().toISOString() };
     setSessionState(session);
     lastUserMessage = undefined;
@@ -541,26 +482,22 @@ server.registerTool('persona_consolidate', {
 function getBrainStateSummary() {
     const lines = [];
     lines.push('--- BRAIN STATE ---');
-    // Emotional tone
     const dominant = getDominantEmotion();
     const valence = emotionalValence(session.emotionalTone);
     if (dominant !== 'neutral') {
         lines.push(`Emotional context: ${dominant} (valence: ${valence > 0 ? '+' : ''}${valence.toFixed(2)})`);
     }
-    // Compound emotions (Plutchik dyads)
     const dyads = detectDyads(session.emotionalTone);
     if (dyads.length > 0) {
         const dyadStr = dyads.slice(0, 3).map(d => `${d.name} (${d.intensity.toFixed(2)})`).join(', ');
         lines.push(`Compound emotions: ${dyadStr}`);
     }
-    // Cognitive load
     if (session.cognitiveLoad.inFlow) {
         lines.push('Cognitive state: IN FLOW (be concise, match pace)');
     }
     else if (session.cognitiveLoad.overloaded) {
         lines.push('Cognitive state: OVERLOADED (use chunks, numbered steps)');
     }
-    // Session info
     if (session.messageCount > 0) {
         lines.push(`Session: ${session.messageCount} messages processed`);
     }
@@ -604,7 +541,7 @@ function checkAutoConsolidate() {
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('Persona MCP server v2.0.0 running on stdio');
+    console.error('Persona MCP server v2.1.0 running on stdio');
     console.error(`Data dir: ${config.dataDir}`);
     console.error(`Soul files: ${SOUL_FILE_NAMES.map(f => readSoulFile(config, f) ? f : `${f} (empty)`).join(', ')}`);
     const signals = loadSignals(config);
@@ -617,7 +554,6 @@ async function main() {
     }
     console.error(`Emotional associations: ${traitState.emotionalAssociations.length}`);
     console.error(`Sessions analyzed: ${traitState.sessionsAnalyzed}`);
-    // Auto-consolidate if stale (> 24h since last consolidation)
     checkAutoConsolidate();
 }
 main().catch(err => {
