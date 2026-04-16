@@ -481,11 +481,34 @@ server.registerTool('persona_analyze', {
     });
 });
 // ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// PROCEDURAL BRIDGE (Engram ↔ Persona rule sync)
+// ─────────────────────────────────────────────────────────────────────
+server.registerTool('persona_procedural_sync', {
+    title: 'Sync Procedural Rules',
+    description: 'Sync procedural rules with Engram via the shared bridge file. "export" writes applied proposals to bridge, "import" reads Engram rules as new proposals, "sync" does both.',
+    inputSchema: z.object({
+        direction: z.enum(['export', 'import', 'sync']).describe('Sync direction.'),
+    }),
+}, async ({ direction }) => {
+    const { exportProposalsToBridge, importRulesFromBridge, syncBridge } = await import('./procedural-bridge.js');
+    if (direction === 'export') {
+        const count = exportProposalsToBridge(config);
+        return json({ exported: count });
+    }
+    if (direction === 'import') {
+        const result = importRulesFromBridge(config);
+        return json(result);
+    }
+    const result = syncBridge(config);
+    return json(result);
+});
+// ─────────────────────────────────────────────────────────────────────
 // CONSOLIDATION (between-session processing)
 // ─────────────────────────────────────────────────────────────────────
 server.registerTool('persona_consolidate', {
     title: 'Run Consolidation',
-    description: 'Run the between-session consolidation pass. Inspired by sleep consolidation and the Default Mode Network. Decays stale emotional associations, detects style drift, checks for contradictions, and promotes consistent patterns to stable traits. Run at end of session or periodically.',
+    description: 'Run the between-session consolidation pass. Inspired by sleep consolidation and the Default Mode Network. Decays stale emotional associations, detects style drift, checks for contradictions, and promotes consistent patterns to stable traits. Also syncs procedural rules with Engram bridge. Run at end of session or periodically.',
     inputSchema: z.object({}),
 }, async () => {
     // Record current session before consolidating
@@ -493,12 +516,22 @@ server.registerTool('persona_consolidate', {
     const counts = getSignalCounts(signals);
     recordSessionSummary(config, session, counts);
     const result = runConsolidation(config);
+    // Auto-sync procedural bridge during consolidation
+    let bridgeSync = { exported: 0, imported: 0, skipped: 0, conflicts: [] };
+    try {
+        const { syncBridge } = await import('./procedural-bridge.js');
+        bridgeSync = syncBridge(config);
+    }
+    catch {
+        // Bridge sync is best-effort
+    }
     // Reset session state for next session
     session = { ...DEFAULT_SESSION_STATE, startedAt: new Date().toISOString() };
     setSessionState(session);
     lastUserMessage = undefined;
     return json({
         result,
+        bridge: bridgeSync,
         message: result.contradictions.length > 0
             ? `Consolidation complete. ${result.contradictions.length} contradiction(s) detected.`
             : 'Consolidation complete. Patterns integrated.',
