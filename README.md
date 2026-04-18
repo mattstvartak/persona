@@ -254,14 +254,13 @@ Then point your MCP client at `dist/server.js`:
 
 ## Tools
 
-18 tools across eight groups.
+15 tools across seven groups. The standalone `persona_adapt` and `persona_procedural_sync` were folded into `persona_context` and `persona_consolidate` respectively in 1.0.0-beta.5 — adaptations ride along with the context dump, and the Engram procedural bridge auto-syncs during consolidation.
 
-### Context & Adaptations
+### Context
 
 | Tool | What it does |
 |------|-------------|
-| `persona_context` | Full personality dump: soul files plus learned adaptations. Good to call at the start of complex interactions. |
-| `persona_adapt` | Just the adaptations, without the soul file content. |
+| `persona_context` | Full personality dump: soul files plus learned adaptations. Good to call at the start of complex interactions. Adaptations alone can be pulled from the response if you don't want the soul-file content (replaces the old `persona_adapt`). |
 
 ### Signal Recording
 
@@ -304,14 +303,13 @@ Then point your MCP client at `dist/server.js`:
 
 | Tool | What it does |
 |------|-------------|
-| `persona_consolidate` | Run the between-session consolidation pass. Decays stale emotions, detects drift, checks for sycophancy. Auto-syncs the Engram bridge as a best-effort step. Also runs automatically on startup if >24h since last consolidation. |
+| `persona_consolidate` | Run the between-session consolidation pass. Decays stale emotions, detects drift, checks for sycophancy, and auto-syncs the Engram procedural bridge (replaces the old `persona_procedural_sync`). Also runs automatically on startup if >24h since last consolidation. |
 
 ### Bridge
 
 | Tool | What it does |
 |------|-------------|
 | `persona_state` | Lightweight bridge endpoint for Engram — returns current emotional valence, arousal, and cognitive load so Engram can weight memory importance and gate search results. |
-| `persona_procedural_sync` | Sync evolution proposals with Engram's procedural rules via shared bridge file (`~/.claude/procedural-bridge.json`). Applied proposals export as rules; imported Engram rules become pending proposals with conflict detection. |
 
 ## Slash Commands
 
