@@ -273,7 +273,7 @@ Then point your MCP client at `dist/server.js`:
 | Tool | What it does |
 |------|-------------|
 | `persona_profile` | The behavioral profile: preferences, satisfaction, topic patterns. |
-| `persona_stats` | High-level overview with signal counts, profile state, pending proposals, and soul file sizes. |
+| `persona_stats` | High-level overview with signal counts, profile state, pending proposals, soul file sizes, and Engram bridge status. |
 
 ### Evolution
 
@@ -424,7 +424,7 @@ When both MCP servers are running, they coordinate through three mechanisms:
 
 2. **Cognitive-load-gated search.** When Persona detects cognitive overload, Engram's search receives the load signal and returns only the top 3 high-importance memories instead of the full set. Less noise when you're already overwhelmed.
 
-3. **Procedural bridge.** Persona's applied evolution proposals and Engram's learned procedural rules sync through a shared file at `~/.claude/procedural-bridge.json`. Persona proposals become Engram rules. Engram rules become Persona proposals with conflict detection against existing soul files. The bridge auto-syncs during `persona_consolidate`.
+3. **Procedural bridge.** Persona's applied evolution proposals and Engram's learned procedural rules sync through a shared file at `~/.claude/procedural-bridge.json`. Persona proposals become Engram rules. Engram rules become Persona proposals with semantic conflict detection against existing soul files — catches antonym pairs and value contradictions, not just exact duplicates. The bridge auto-syncs during `persona_consolidate`, and bridge health is visible via `persona_stats`.
 
 Persona works fine solo. But if you want an agent that feels like it genuinely knows you, not just how to talk to you but what you've told it, run both.
 

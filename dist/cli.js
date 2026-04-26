@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+/**
+ * Persona CLI router.
+ *
+ * Usage:
+ *   persona-mcp                                              run MCP stdio server (back-compat)
+ *   persona-mcp read [--project <p>] [--files <list>]        read soul files, output markdown
+ *   persona-mcp help
+ *
+ * The CLI is additive — it wraps the same soul-file primitives the MCP
+ * server uses so hook scripts can pull personality context without
+ * speaking stdio JSON-RPC.
+ *
+ * --project <p> looks up <dataDir>/soul/<p>/X.md first, then falls back
+ * to the global <dataDir>/soul/X.md. Today Persona's soul files are
+ * global only — the per-project lookup is forward-compatible for when
+ * project-scoped souls land. Existing MCP tools are untouched.
+ */
+import { parseArgs } from 'node:util';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { loadConfig } from './config.js';
+import { SOUL_FILE_NAMES } from './types.js';
+const HELP = `persona-mcp — personality CLI
+
+Usage:
+  persona-mcp                                  run MCP stdio server
+  persona-mcp read [opts]                      read soul files
+  persona-mcp help                             this message
+
+read options:
+  --project <p>    look in <dataDir>/soul/<p>/ first, fall back to global
+  --files <list>   comma-separated subset of: personality,style,skill
+                   (default: all three, in that order)
+
+Environment:
+  PERSONA_DATA_DIR   data directory (default ~/.claude/persona)
+`;
+const READ_OPTS = {
+    project: { type: 'string' },
+    files: { type: 'string' },
+};
+const FILE_NAMES = {
+    personality: 'PERSONALITY.md',
+    style: 'STYLE.md',
+    skill: 'SKILL.md',
+};
+const SECTION_HEADERS = {
+    personality: '## Personality',
+    style: '## Communication Style',
+    skill: '## Working Style',
+};
+function fail(msg) {
+    process.stderr.write(`persona-mcp: ${msg}\n`);
+    process.exit(2);
+}
+function parseFiles(raw) {
+    if (!raw)
+        return SOUL_FILE_NAMES;
+    const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+    for (const p of parts) {
+        if (!SOUL_FILE_NAMES.includes(p)) {
+            fail(`--files: unknown soul file "${p}" (valid: ${SOUL_FILE_NAMES.join(',')})`);
+        }
+    }
+    return parts;
+}
+function readSoul(dataDir, project, file) {
+    const fname = FILE_NAMES[file];
+    if (project) {
+        const projPath = join(dataDir, 'soul', project, fname);
+        if (existsSync(projPath))
+            return readFileSync(projPath, 'utf-8');
+    }
+    const globalPath = join(dataDir, 'soul', fname);
+    if (existsSync(globalPath))
+        return readFileSync(globalPath, 'utf-8');
+    return '';
+}
+function runRead(argv) {
+    const { values } = parseArgs({ args: argv, options: READ_OPTS, allowPositionals: false });
+    const files = parseFiles(values.files);
+    const project = values.project;
+    const config = loadConfig();
+    const sections = [];
+    for (const f of files) {
+        const body = readSoul(config.dataDir, project, f).trim();
+        if (body)
+            sections.push(`${SECTION_HEADERS[f]}\n${body}`);
+    }
+    if (sections.length > 0) {
+        process.stdout.write(sections.join('\n\n') + '\n');
+    }
+    // Empty output on no soul files is intentional — hook callers treat
+    // empty stdout as "nothing to inject" without raising errors.
+}
+async function main() {
+    const [, , sub, ...rest] = process.argv;
+    if (!sub || sub.startsWith('-')) {
+        // Back-compat: bare invocation runs the MCP stdio server.
+        await import('./server.js');
+        return;
+    }
+    switch (sub) {
+        case 'help':
+        case '--help':
+        case '-h':
+            process.stdout.write(HELP);
+            return;
+        case 'read':
+            runRead(rest);
+            return;
+        default:
+            process.stderr.write(`persona-mcp: unknown subcommand "${sub}"\n\n${HELP}`);
+            process.exit(2);
+    }
+}
+main().catch(err => {
+    process.stderr.write(`persona-mcp: ${err.stack ?? err}\n`);
+    process.exit(1);
+});
+//# sourceMappingURL=cli.js.map
