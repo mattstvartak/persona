@@ -2,7 +2,7 @@ import type { BehavioralProfile, PersonaConfig, SessionState, TraitState } from 
 import { DEFAULT_SESSION_STATE, DEFAULT_TRAIT_STATE, SYCOPHANCY_APPROVAL_THRESHOLD } from './types.js';
 import { loadProfile } from './profile.js';
 import { loadTraitState } from './emotions.js';
-import { computeTargetStyle } from './traits.js';
+import { computeTargetStyle, RELIABILITY_THRESHOLD } from './traits.js';
 import { getVerbosityMultiplier } from './cognitive-load.js';
 
 /**
@@ -238,7 +238,7 @@ export function getProfileSummary(config: PersonaConfig): string {
     lines.push(`  Agreeableness: ${traitLabel(bf.agreeableness)} (${bf.agreeableness.toFixed(2)})`);
     lines.push(`  Neuroticism: ${traitLabel(bf.neuroticism)} (${bf.neuroticism.toFixed(2)})`);
   } else if (traitState.bigFive.sampleCount > 0) {
-    lines.push(`\nBig Five: building (${traitState.bigFive.sampleCount}/${15} samples needed)`);
+    lines.push(`\nBig Five: building (${traitState.bigFive.sampleCount}/${RELIABILITY_THRESHOLD} samples needed)`);
   }
 
   // Emotional associations

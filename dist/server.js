@@ -8,13 +8,13 @@ import { readSoulFile, readAllSoulFiles, writeSoulFile, initSoulFiles, buildSoul
 import { readAllJournalFiles, clearJournal, removeJournalFragment } from './journal.js';
 import { listRoles, readRole, writeRole, getActiveRole, setActiveRole } from './role.js';
 import { listSoulPresets, readSoulPreset, applySoulPreset } from './soul-presets.js';
-import { recordSignal, loadSignals, getSignalCounts, detectSignals } from './signals.js';
+import { recordSignal, loadSignals, getSignalCounts, getRecentSignals, detectSignals } from './signals.js';
 import { loadProfile, rebuildProfile, saveProfileExternal } from './profile.js';
 import { getAdaptations, getProfileSummary, setSessionState, getSessionState } from './adaptations.js';
 import { generateProposals, loadProposals, applyProposal, rejectProposal } from './evolution.js';
 import { analyzeUserMessages, updateSoulFromSynthesis } from './synthesis.js';
 import { detectEmotionalTone, emotionalValence, detectDyads, loadTraitState, saveTraitState, updateEmotionalAssociation } from './emotions.js';
-import { updateBigFive, computeStyleVector, updateBaselineStyle, detectTechnicalDomain, blendStyleVectors } from './traits.js';
+import { updateBigFive, computeStyleVector, updateBaselineStyle, detectTechnicalDomain, blendStyleVectors, RELIABILITY_THRESHOLD } from './traits.js';
 import { updateCognitiveLoad } from './cognitive-load.js';
 import { runConsolidation, recordSessionSummary } from './consolidation.js';
 import { SOUL_FILE_NAMES, DEFAULT_SESSION_STATE, MAX_PINNED_FEEDBACK, MAX_PINNED_FEEDBACK_WARN } from './types.js';
@@ -32,16 +32,17 @@ const soulFiles = initSoulFiles(config);
 let session = { ...DEFAULT_SESSION_STATE, startedAt: new Date().toISOString() };
 setSessionState(session);
 let lastUserMessage;
-// ── Throttled trait-state persistence ─────────────────────────────
+// ── Trait-state persistence ───────────────────────────────────────
 // Trait state (Big Five EMA, domain ratio, emotional associations)
-// changes by tiny amounts per message. Writing every call burns disk
-// I/O for inference deltas that won't materially affect adaptations
-// until they accumulate. Hold it in memory and save every N messages.
-//
-// Tests / synthesis / consolidation can force an immediate flush via
-// forceSaveTraitState(). Set PERSONA_TRAIT_SAVE_INTERVAL=1 to disable
-// throttling entirely.
-const TRAIT_SAVE_INTERVAL = parseInt(process.env.PERSONA_TRAIT_SAVE_INTERVAL ?? '10', 10);
+// changes by tiny amounts per message. It used to be throttled to
+// every 10th update with no shutdown flush — but each Claude Code
+// session is a fresh short-lived server process, so up to 9 updates
+// evaporated on every exit. That's how a profile with 32 recorded
+// signals ended up with only 8 Big Five samples. The state file is a
+// few KB of JSON; write it every update. The throttle machinery stays
+// for anyone who wants it back (PERSONA_TRAIT_SAVE_INTERVAL=10), and
+// an exit hook flushes whatever is still in memory either way.
+const TRAIT_SAVE_INTERVAL = parseInt(process.env.PERSONA_TRAIT_SAVE_INTERVAL ?? '1', 10);
 let traitSaveCounter = 0;
 let traitStateCache = null;
 function getTraitState() {
@@ -63,6 +64,35 @@ function forceSaveTraitState(traitState) {
     traitStateCache = state;
     saveTraitState(config, state);
 }
+// ── Shutdown flush ─────────────────────────────────────────────────
+// MCP stdio servers die when the client closes the pipe. Flush the
+// trait-state cache and record a session summary so sessionsAnalyzed
+// reflects reality — before this, session history only grew when
+// someone manually called voice_consolidate, which nobody did, so
+// consolidation's style-drift detection had nothing to chew on.
+let shutdownFlushed = false;
+function shutdownFlush() {
+    if (shutdownFlushed)
+        return;
+    shutdownFlushed = true;
+    try {
+        if (traitStateCache)
+            saveTraitState(config, traitStateCache);
+    }
+    catch { /* best-effort */ }
+    try {
+        if (session.messageCount > 0) {
+            const sessionSignals = getRecentSignals(loadSignals(config), 1);
+            recordSessionSummary(config, session, getSignalCounts(sessionSignals));
+        }
+    }
+    catch { /* best-effort */ }
+}
+process.on('beforeExit', shutdownFlush);
+process.on('SIGINT', () => { shutdownFlush(); process.exit(0); });
+process.on('SIGTERM', () => { shutdownFlush(); process.exit(0); });
+// Claude Code closes stdin when a session ends — treat it as shutdown.
+process.stdin.on('close', () => { shutdownFlush(); });
 function text(t) { return { content: [{ type: 'text', text: t }] }; }
 function json(data) { return text(JSON.stringify(data, null, 2)); }
 function processUserMessage(message, opts = {}) {
@@ -85,8 +115,24 @@ function processUserMessage(message, opts = {}) {
         : { ...msgStyle };
     session.cognitiveLoad = updateCognitiveLoad(session.cognitiveLoad, message, lastUserMessage);
     const traitState = getTraitState();
-    const techRatio = detectTechnicalDomain(message);
-    traitState.domainTechnicalRatio = traitState.domainTechnicalRatio * 0.95 + techRatio * 0.05;
+    // Domain detection previously classified only `message`, which in the
+    // dominant voice_signal flow is a short reaction snippet ("perfect",
+    // "no, do X") that never hits the technical wordlist — a full-time
+    // developer's profile read domainTechnicalRatio 0.05 / "casual".
+    // Classify the message TOGETHER with the signal's context (where the
+    // technical substance actually lives), and treat an explicit
+    // code/dev category as a strong domain observation in its own right.
+    const domainText = opts.context ? `${message}\n${opts.context}` : message;
+    const categoryPrior = opts.category && /^(code|dev|engineering|infra|devops|gamedev)/i.test(opts.category)
+        ? 0.9
+        : 0;
+    const techRatio = Math.max(detectTechnicalDomain(domainText), categoryPrior);
+    // Seed from the first observation instead of EMA-ing up from 0, then
+    // adapt at alpha 0.15 (the old 0.05 needed ~60 turns to cross the
+    // "technical" display threshold even on pure-code sessions).
+    traitState.domainTechnicalRatio = traitState.bigFive.sampleCount === 0
+        ? techRatio
+        : traitState.domainTechnicalRatio * 0.85 + techRatio * 0.15;
     if (!opts.skipBigFiveInference) {
         traitState.bigFive = updateBigFive(traitState.bigFive, message, traitState.domainTechnicalRatio);
     }
@@ -95,7 +141,7 @@ function processUserMessage(message, opts = {}) {
         // count toward "this profile has seen N interactions" the same as
         // inferred ones.
         traitState.bigFive.sampleCount = (traitState.bigFive.sampleCount ?? 0) + 1;
-        if (traitState.bigFive.sampleCount >= 15)
+        if (traitState.bigFive.sampleCount >= RELIABILITY_THRESHOLD)
             traitState.bigFive.reliable = true;
     }
     traitState.baselineStyleVector = updateBaselineStyle(traitState.baselineStyleVector, msgStyle);
@@ -323,7 +369,7 @@ server.registerTool('voice_signal', {
         if (recentUserMessages.length > 50)
             recentUserMessages.splice(0, recentUserMessages.length - 50);
     }
-    processUserMessage(primaryContent, { skipBigFiveInference });
+    processUserMessage(primaryContent, { skipBigFiveInference, context, category });
     if (category && recorded.length > 0) {
         const traitState = getTraitState();
         // Map the primary signal to an emotional valence in [-1, 1]. The
@@ -360,9 +406,21 @@ server.registerTool('voice_signal', {
     rebuildProfile(config, signals);
     const profile = loadProfile(config);
     const pending = loadProposals(config).filter(p => p.status === 'pending');
-    if (profile.stats.totalSignals > 0 &&
-        profile.stats.totalSignals % config.proposalThreshold === 0 &&
+    // Auto-fire gate. The old check was `totalSignals % threshold === 0`,
+    // which a single auto-detect turn recording 2-3 signals steps right
+    // over (11 → 13 skips 12) — live deployments with 30+ signals had
+    // never generated a proposal. Now: once past the threshold, run
+    // generation whenever there are new signals since the last attempt.
+    // Generation is cheap in-memory counting; the pending<5 cap and the
+    // rejected-only reproposal rule inside generateProposals keep it
+    // from spamming.
+    const traitStateForProposals = getTraitState();
+    const lastAttempt = traitStateForProposals.lastProposalSignalCount ?? 0;
+    if (profile.stats.totalSignals >= config.proposalThreshold &&
+        profile.stats.totalSignals > lastAttempt &&
         pending.length < 5) {
+        traitStateForProposals.lastProposalSignalCount = profile.stats.totalSignals;
+        maybeSaveTraitState(traitStateForProposals);
         const newProposals = generateProposals(config, signals);
         if (newProposals.length > 0) {
             return json({
@@ -927,7 +985,7 @@ server.registerTool('voice_synthesize', {
             extraversion: traitState.bigFive.extraversion.toFixed(2),
             agreeableness: traitState.bigFive.agreeableness.toFixed(2),
             neuroticism: traitState.bigFive.neuroticism.toFixed(2),
-        } : `building (${traitState.bigFive.sampleCount}/15)`,
+        } : `building (${traitState.bigFive.sampleCount}/${RELIABILITY_THRESHOLD})`,
         updated: result.updated,
         changes: result.changes,
     });

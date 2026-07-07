@@ -6,7 +6,10 @@ import { DEFAULT_BIG_FIVE, DEFAULT_STYLE_VECTOR } from './types.js';
  *
  * Based on psychometric research mapping behavioral signals to trait dimensions.
  * Uses exponential moving average with 0.95 decay per interaction.
- * Requires ~15-20 interactions before marking scores as reliable.
+ * Requires RELIABILITY_THRESHOLD interactions before marking scores as
+ * reliable. 10 was chosen against observed real-world signal density
+ * (tens of signals over months, roughly one processed turn per signal):
+ * the original 15 left profiles in "building..." for months.
  *
  * Also computes a 5-dimensional style mirroring vector based on the
  * chameleon effect (Chartrand & Bargh, 1999). Target response style =
@@ -15,7 +18,7 @@ import { DEFAULT_BIG_FIVE, DEFAULT_STYLE_VECTOR } from './types.js';
  */
 
 const EMA_DECAY = 0.95;
-const RELIABILITY_THRESHOLD = 15;
+export const RELIABILITY_THRESHOLD = 10;
 
 // ── Domain Detection ───────────────────────────────────────────────
 

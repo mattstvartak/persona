@@ -1,4 +1,5 @@
 import type { BigFiveTraits, StyleVector } from './types.js';
+export declare const RELIABILITY_THRESHOLD = 10;
 /**
  * Detect how technical a message is. Returns 0 (casual) to 1 (fully technical).
  */

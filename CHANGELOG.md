@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Profile rebuild is now deterministic.** `rebuildProfile` fires on
+  every `voice_signal` call but mutated persisted state incrementally,
+  so the whole 30-day signal window was re-applied on top of the last
+  rebuild's output every time. Live profiles showed
+  `topicPreferences.code.signalCount = 241` against 32 total signals,
+  global verbosity pinned at 0.92, and per-topic satisfaction saturated
+  at the clamps. Derived fields are now reset and recomputed by
+  replaying signals in timestamp order — rebuild(signals) is a pure
+  function of the history (pinnedFeedback stays user-curated).
+
+- **Likes/avoids extraction no longer captures garbage.** The
+  extractors ran an unbounded `.{5,60}` window over the whole narrated
+  signal content, so a trigger word anywhere captured across quote and
+  clause boundaries (live example: a stored "avoid" of
+  `resize my browser windows please" — while testing responsive`).
+  Extraction now scopes to quoted user speech when present, stops at
+  clause boundaries, never ends mid-word, and 'perfect'/'exactly' were
+  dropped as capture triggers. Covered by `dist/tests/profile-rebuild.js`.
+
+- **Trait state no longer evaporates on session exit.** Persistence was
+  throttled to every 10th update with no shutdown flush, but each
+  Claude Code session is a fresh short-lived server process — up to 9
+  updates were lost per session (a profile with 32 signals had only 8
+  Big Five samples). Default save interval is now 1, and a shutdown
+  hook (beforeExit / SIGINT / SIGTERM / stdin close) flushes the cache
+  and records a session summary, so `sessionsAnalyzed` finally grows
+  without anyone calling `voice_consolidate` manually.
+
+- **Evolution proposals actually fire.** The auto-generation gate was
+  `totalSignals % proposalThreshold === 0`, which a single auto-detect
+  turn recording 2-3 signals steps right over (11 -> 13 skips 12) —
+  deployments with 30+ signals had never generated a proposal. The gate
+  is now a persisted watermark (`traitState.lastProposalSignalCount`):
+  past the threshold, generation runs whenever there are new signals
+  since the last attempt.
+
+- **Domain classifier reads the right text.** `domainTechnicalRatio`
+  classified only the signal's reaction snippet ("perfect", "no, do X"),
+  so a full-time developer profiled as "casual" (ratio 0.05). Detection
+  now folds in the signal's `context`, treats a code/dev `category` as
+  a 0.9 observation, seeds from the first observation instead of
+  EMA-ing up from zero, and adapts at alpha 0.15 instead of 0.05.
+
+### Changed
+
+- **Big Five reliability threshold lowered 15 -> 10** and exported as
+  `RELIABILITY_THRESHOLD` (the literal was duplicated in three display
+  strings that could drift). Chosen against observed real-world signal
+  density: 15 left profiles in "building..." for months.
+
 ## [1.0.1] - 2026-05-20
 
 ### Added

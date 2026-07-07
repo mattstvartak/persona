@@ -128,6 +128,11 @@ export interface TraitState {
     sessionsAnalyzed: number;
     lastConsolidation: string;
     domainTechnicalRatio: number;
+    /** totalSignals watermark at the last proposal-generation attempt.
+     *  Replaces the old modulo gate (totalSignals % threshold === 0),
+     *  which silently skipped whenever a multi-signal turn stepped over
+     *  the exact multiple — live deployments never generated proposals. */
+    lastProposalSignalCount?: number;
 }
 export interface EmotionalAssociation {
     topic: string;

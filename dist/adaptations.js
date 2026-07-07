@@ -1,7 +1,7 @@
 import { DEFAULT_SESSION_STATE, SYCOPHANCY_APPROVAL_THRESHOLD } from './types.js';
 import { loadProfile } from './profile.js';
 import { loadTraitState } from './emotions.js';
-import { computeTargetStyle } from './traits.js';
+import { computeTargetStyle, RELIABILITY_THRESHOLD } from './traits.js';
 import { getVerbosityMultiplier } from './cognitive-load.js';
 /**
  * Real-time adaptations -- dynamic adjustments generated from the
@@ -218,7 +218,7 @@ export function getProfileSummary(config) {
         lines.push(`  Neuroticism: ${traitLabel(bf.neuroticism)} (${bf.neuroticism.toFixed(2)})`);
     }
     else if (traitState.bigFive.sampleCount > 0) {
-        lines.push(`\nBig Five: building (${traitState.bigFive.sampleCount}/${15} samples needed)`);
+        lines.push(`\nBig Five: building (${traitState.bigFive.sampleCount}/${RELIABILITY_THRESHOLD} samples needed)`);
     }
     // Emotional associations
     const negAssoc = traitState.emotionalAssociations.filter(a => a.valence < -0.3);
