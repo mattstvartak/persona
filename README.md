@@ -61,7 +61,7 @@ Signals are the raw input. The agent records one whenever it picks up a meaningf
 | `praise` | You liked something specific |
 | `abandonment` | You changed topic abruptly (usually means something went wrong) |
 
-Signals live in a FIFO buffer, 500 max by default. Oldest drop off as new ones arrive. The profile rebuilds after every signal, so it's always reflecting the current state.
+Signals live in a FIFO buffer, 500 max by default. Oldest drop off as new ones arrive. The profile rebuilds after every signal as a deterministic replay of the signal history — derived fields are reset and recomputed in timestamp order, so rebuilding twice from the same signals gives the same profile (pinned feedback is the only hand-curated field that persists across rebuilds).
 
 ### The Profile
 
@@ -95,7 +95,7 @@ It won't write anything until there's enough data though. 5 messages minimum for
 
 ### Evolution Proposals
 
-Every 12 signals (configurable), the engine looks at patterns and generates proposals. These are concrete edits to soul files, each with a target file, an action (add/remove/replace), the content, a rationale, a confidence score, and the signal evidence that triggered it.
+Once past the signal threshold (12 by default), the engine checks for new patterns after every signal and generates proposals when something crosses a per-pattern gate. (Before 1.0.2 this used an exact `totalSignals % 12` check, which multi-signal turns stepped over — deployments could sit at 30+ signals with zero proposals ever generated.) These are concrete edits to soul files, each with a target file, an action (add/remove/replace), the content, a rationale, a confidence score, and the signal evidence that triggered it.
 
 Nothing auto-applies. Proposals sit in a queue until you (or the agent) explicitly applies or rejects them. You stay in control of how the personality evolves.
 
@@ -257,7 +257,7 @@ Then point your MCP client at `dist/server.js`:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `maxSignals` | `500` | Signal buffer size (FIFO) |
-| `proposalThreshold` | `12` | Signals between auto-generating proposals |
+| `proposalThreshold` | `12` | Minimum signals before proposal generation starts (a persisted watermark then gates re-runs to new-signal turns) |
 
 ### Hosted (przm Cloud)
 
@@ -526,7 +526,7 @@ All local:
 ├── profile.json          # Behavioral profile
 ├── proposals.json        # Evolution proposals
 ├── trait-state.json      # Big Five, style baseline, emotional associations
-├── session-history.json  # Session summaries for consolidation
+├── session-history.json  # Session summaries for consolidation (one appended automatically at server shutdown)
 └── soul/
     ├── PERSONALITY.md    # Tone, humor, directness
     ├── STYLE.md          # Formatting, verbosity
