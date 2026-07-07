@@ -1,6 +1,6 @@
 {
   "name": "@onenomad/przm-voice",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "mcpName": "io.github.onenomad-llc/przm-voice",
   "description": "przm Voice — adaptive personality MCP server for AI agents. Part of the przm AI reliability suite. Evolving personality from behavioral signals, style adaptations, and soul-file management.",
   "type": "module",
